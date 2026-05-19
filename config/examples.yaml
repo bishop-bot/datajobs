@@ -1,0 +1,192 @@
+# =============================================================================
+# DataJobs Server Configuration
+# =============================================================================
+# This file contains all configuration options for the datajobs server.
+# All settings can be overridden via environment variables.
+#
+# Environment Variable Naming Convention:
+#   - Top-level: UPPERCASE (e.g., SERVER_PORT, LOG_LEVEL)
+#   - Nested: Use prefixes (e.g., WORKER_POOL_SIZE, METRICS_ENABLED)
+#   - Per-job: JOB_0_ENABLED, JOB_1_CRON, etc. (index-based)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Server Configuration
+# -----------------------------------------------------------------------------
+server:
+  # Host to bind to (0.0.0.0 for all interfaces)
+  host: "0.0.0.0"
+  # Port to listen on
+  port: 8080
+
+# -----------------------------------------------------------------------------
+# Worker Pool Configuration
+# -----------------------------------------------------------------------------
+worker:
+  # Maximum number of concurrent jobs
+  poolSize: 10
+  # Maximum jobs that can be queued (when pool is busy)
+  queueCapacity: 100
+  # Seconds to wait for jobs to complete during shutdown
+  shutdownTimeout: 30
+
+# -----------------------------------------------------------------------------
+# Scheduler Configuration
+# -----------------------------------------------------------------------------
+scheduler:
+  # Timezone for cron expressions (IANA timezone format)
+  # Common values: "UTC", "America/New_York", "Europe/London"
+  timezone: "UTC"
+
+# -----------------------------------------------------------------------------
+# Job Definitions
+# -----------------------------------------------------------------------------
+# Each job defines a scheduled task with retry behavior and metadata.
+# Jobs can be triggered via the REST API or scheduled via cron.
+# -----------------------------------------------------------------------------
+jobs:
+  # -------------------------------------------------------------------------
+  # Example: Bulk ES Futures Data Ingest
+  # Runs daily at midnight to ingest historical S3 data into QuestDB
+  # -------------------------------------------------------------------------
+  - id: "bulk-es-ingest"
+    name: "Bulk ES Futures Data Ingest"
+    # Cron: Daily at midnight UTC
+    cron: "0 0 * * *"
+    # Job type: used for categorization and filtering
+    type: "bulk_ingest"
+    # Handler name: maps to registered Go handler function
+    handler: "bulk_ingest"
+    # Enable/disable this job (false = won't run on schedule, can still be triggered manually)
+    enabled: true
+    # Job execution timeout in seconds (job killed after this duration)
+    timeout: 3600  # 1 hour
+    # Retry configuration (applied when job fails)
+    retry:
+      # Maximum number of retry attempts after failure
+      maxAttempts: 3
+      # Initial delay between retries (milliseconds)
+      initialDelay: 5000
+      # Maximum delay between retries (milliseconds)
+      maxDelay: 300000
+      # Backoff multiplier (delay = initialDelay * multiplier^attempt)
+      multiplier: 2.0
+    # Job-specific configuration (passed to handler as metadata)
+    metadata:
+      source: "s3://bucket/es-futures"
+      targetTable: "es_trades"
+      batchSize: 50000
+
+  # -------------------------------------------------------------------------
+  # Example: Incremental Trades Update
+  # Runs every 5 minutes to fetch and ingest recent trade data
+  # -------------------------------------------------------------------------
+  - id: "incremental-trades-update"
+    name: "Incremental Trades Update"
+    # Cron: Every 5 minutes
+    cron: "*/5 * * * *"
+    type: "incremental_update"
+    handler: "incremental_update"
+    enabled: true
+    timeout: 300  # 5 minutes
+    retry:
+      maxAttempts: 5
+      initialDelay: 1000
+      maxDelay: 60000
+      multiplier: 2.0
+    metadata:
+      source: "api/trades"
+      batchSize: 1000
+
+  # -------------------------------------------------------------------------
+  # Example: QuestDB Maintenance
+  # Runs hourly to perform maintenance operations (compaction, cleanup)
+  # -------------------------------------------------------------------------
+  - id: "questdb-maintenance"
+    name: "QuestDB Maintenance"
+    # Cron: Every hour at minute 15
+    cron: "15 * * * *"
+    type: "maintenance"
+    handler: "questdb_maintenance"
+    enabled: true
+    timeout: 600  # 10 minutes
+    retry:
+      maxAttempts: 2
+      initialDelay: 2000
+      maxDelay: 30000
+      multiplier: 2.0
+    metadata:
+      operations:
+        - "analyze"
+        - "cleanup"
+
+  # -------------------------------------------------------------------------
+  # Example: SQLite to QuestDB Sync
+  # Runs every 15 minutes to sync data from SQLite to QuestDB
+  # -------------------------------------------------------------------------
+  - id: "sqlite-questdb-sync"
+    name: "SQLite to QuestDB Sync"
+    # Cron: Every 15 minutes
+    cron: "*/15 * * * *"
+    type: "sync"
+    handler: "sqlite_to_questdb"
+    enabled: false  # Disabled by default - enable for testing
+    timeout: 180
+    retry:
+      maxAttempts: 3
+      initialDelay: 1000
+      maxDelay: 30000
+      multiplier: 2.0
+    metadata:
+      sourceDb: "/data/local.db"
+      targetTable: "local_trades"
+
+# -----------------------------------------------------------------------------
+# Metrics Configuration (Prometheus)
+# -----------------------------------------------------------------------------
+metrics:
+  # Enable Prometheus metrics endpoint
+  enabled: true
+  # HTTP path for metrics endpoint
+  path: "/metrics"
+
+# -----------------------------------------------------------------------------
+# Distributed Tracing Configuration (OpenTelemetry)
+# -----------------------------------------------------------------------------
+tracing:
+  # Enable OpenTelemetry tracing
+  enabled: false
+  # Service name for traces (appears in trace viewer)
+  serviceName: "datajobs"
+  # Exporter type: otlp (OTLP protocol), stdout (console output for debugging)
+  exporterType: "stdout"
+  # Collector endpoint (OTLP gRPC endpoint, e.g., localhost:4317)
+  endpoint: "localhost:4317"
+  # Allow insecure connections (for local development)
+  insecure: true
+
+# -----------------------------------------------------------------------------
+# Logging Configuration
+# -----------------------------------------------------------------------------
+logging:
+  # Log level: debug, info, warn, error
+  level: "info"
+  # Log format: json (structured), text (human-readable)
+  format: "json"
+
+# =============================================================================
+# Environment Variable Reference
+# =============================================================================
+# Override any config value using environment variables:
+#
+# Server: SERVER_HOST, SERVER_PORT
+# Worker: WORKER_POOL_SIZE, WORKER_QUEUE_CAPACITY, WORKER_SHUTDOWN_TIMEOUT
+# Scheduler: SCHEDULER_TIMEZONE
+# Metrics: METRICS_ENABLED, METRICS_PATH
+# Tracing: TRACING_ENABLED, TRACING_SERVICE_NAME, TRACING_EXPORTER, TRACING_ENDPOINT, TRACING_INSECURE
+# Logging: LOG_LEVEL, LOG_FORMAT
+#
+# Per-job overrides (index-based):
+#   JOB_0_ID, JOB_0_CRON, JOB_0_ENABLED, JOB_0_TIMEOUT, JOB_0_RETRY_MAX_ATTEMPTS, ...
+#   JOB_1_ID, JOB_1_CRON, JOB_1_ENABLED, ...
+# =============================================================================

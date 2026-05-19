@@ -1,0 +1,62 @@
+# DataJobs Server Configuration
+# All settings can be overridden via environment variables
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+worker:
+  poolSize: 10
+  queueCapacity: 100
+  shutdownTimeout: 30
+
+scheduler:
+  timezone: "UTC"
+
+jobs:
+  - id: "bulk-es-ingest"
+    name: "Bulk ES Futures Data Ingest"
+    cron: "0 0 * * *"  # Daily at midnight
+    type: "bulk_ingest"
+    handler: "bulk_ingest"
+    enabled: true
+    timeout: 3600  # 1 hour
+    retry:
+      maxAttempts: 3
+      initialDelay: 5000
+      maxDelay: 300000
+      multiplier: 2.0
+    metadata:
+      source: "s3://bucket/es-futures"
+      targetTable: "es_trades"
+
+  - id: "incremental-trades-update"
+    name: "Incremental Trades Update"
+    cron: "*/5 * * * *"  # Every 5 minutes
+    type: "incremental_update"
+    handler: "incremental_update"
+    enabled: true
+    timeout: 300  # 5 minutes
+    retry:
+      maxAttempts: 5
+      initialDelay: 1000
+      maxDelay: 60000
+      multiplier: 2.0
+    metadata:
+      source: "api/trades"
+      batchSize: 1000
+
+metrics:
+  enabled: true
+  path: "/metrics"
+
+tracing:
+  enabled: false
+  serviceName: "datajobs"
+  exporterType: "stdout"  # otlp, jaeger, stdout
+  endpoint: "localhost:4318"
+  insecure: true
+
+logging:
+  level: "info"
+  format: "json"
