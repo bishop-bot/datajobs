@@ -13,10 +13,12 @@ type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Worker   WorkerConfig   `yaml:"worker"`
 	Scheduler SchedulerConfig `yaml:"scheduler"`
-	Jobs     []JobConfig    `yaml:"jobs"`
-	Metrics  MetricsConfig  `yaml:"metrics"`
-	Tracing  TracingConfig  `yaml:"tracing"`
-	Logging  LoggingConfig  `yaml:"logging"`
+	Database DatabaseConfig  `yaml:"database"`
+	QuestDB  QuestDBConfig   `yaml:"questdb"`
+	Jobs     []JobConfig     `yaml:"jobs"`
+	Metrics  MetricsConfig   `yaml:"metrics"`
+	Tracing  TracingConfig   `yaml:"tracing"`
+	Logging  LoggingConfig    `yaml:"logging"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -35,6 +37,23 @@ type WorkerConfig struct {
 // SchedulerConfig holds scheduler settings.
 type SchedulerConfig struct {
 	Timezone string `yaml:"timezone" env:"SCHEDULER_TIMEZONE"`
+}
+
+// DatabaseConfig holds SQLite settings.
+type DatabaseConfig struct {
+	Path       string `yaml:"path" env:"DATABASE_PATH"`
+	JournalMode string `yaml:"journalMode" env:"DATABASE_JOURNAL_MODE"`
+}
+
+// QuestDBConfig holds QuestDB settings.
+type QuestDBConfig struct {
+	Host     string `yaml:"host" env:"QUESTDB_HOST"`
+	Port     int    `yaml:"port" env:"QUESTDB_PORT"`
+	ILPPort  int    `yaml:"ilpPort" env:"QUESTDB_ILP_PORT"`
+	User     string `yaml:"user" env:"QUESTDB_USER"`
+	Password string `yaml:"password" env:"QUESTDB_PASSWORD"`
+	Database string `yaml:"database" env:"QUESTDB_DATABASE"`
+	PoolSize int    `yaml:"poolSize" env:"QUESTDB_POOL_SIZE"`
 }
 
 // JobConfig holds per-job configuration.
@@ -166,6 +185,43 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Logging.Format = v
 	}
 
+	// Database (SQLite)
+	if v := os.Getenv("DATABASE_PATH"); v != "" {
+		cfg.Database.Path = v
+	}
+	if v := os.Getenv("DATABASE_JOURNAL_MODE"); v != "" {
+		cfg.Database.JournalMode = v
+	}
+
+	// QuestDB
+	if v := os.Getenv("QUESTDB_HOST"); v != "" {
+		cfg.QuestDB.Host = v
+	}
+	if v := os.Getenv("QUESTDB_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			cfg.QuestDB.Port = port
+		}
+	}
+	if v := os.Getenv("QUESTDB_ILP_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			cfg.QuestDB.ILPPort = port
+		}
+	}
+	if v := os.Getenv("QUESTDB_USER"); v != "" {
+		cfg.QuestDB.User = v
+	}
+	if v := os.Getenv("QUESTDB_PASSWORD"); v != "" {
+		cfg.QuestDB.Password = v
+	}
+	if v := os.Getenv("QUESTDB_DATABASE"); v != "" {
+		cfg.QuestDB.Database = v
+	}
+	if v := os.Getenv("QUESTDB_POOL_SIZE"); v != "" {
+		if size, err := strconv.Atoi(v); err == nil {
+			cfg.QuestDB.PoolSize = size
+		}
+	}
+
 	// Per-job overrides (iterates through env vars like JOB_0_ENABLED)
 	for i := range cfg.Jobs {
 		prefix := "JOB_" + strconv.Itoa(i) + "_"
@@ -211,6 +267,38 @@ func setDefaults(cfg *Config) {
 	if cfg.Scheduler.Timezone == "" {
 		cfg.Scheduler.Timezone = "UTC"
 	}
+
+	// Database defaults
+	if cfg.Database.Path == "" {
+		cfg.Database.Path = "datajobs.db"
+	}
+	if cfg.Database.JournalMode == "" {
+		cfg.Database.JournalMode = "WAL"
+	}
+
+	// QuestDB defaults
+	if cfg.QuestDB.Host == "" {
+		cfg.QuestDB.Host = "localhost"
+	}
+	if cfg.QuestDB.Port == 0 {
+		cfg.QuestDB.Port = 8812 // pg-wire
+	}
+	if cfg.QuestDB.ILPPort == 0 {
+		cfg.QuestDB.ILPPort = 9009 // ILP
+	}
+	if cfg.QuestDB.User == "" {
+		cfg.QuestDB.User = "admin"
+	}
+	if cfg.QuestDB.Password == "" {
+		cfg.QuestDB.Password = "quest"
+	}
+	if cfg.QuestDB.Database == "" {
+		cfg.QuestDB.Database = "qdb"
+	}
+	if cfg.QuestDB.PoolSize == 0 {
+		cfg.QuestDB.PoolSize = 10
+	}
+
 	if cfg.Metrics.Path == "" {
 		cfg.Metrics.Path = "/metrics"
 	}

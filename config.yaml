@@ -1,5 +1,4 @@
 # DataJobs Server Configuration
-# All settings can be overridden via environment variables
 
 server:
   host: "0.0.0.0"
@@ -13,38 +12,75 @@ worker:
 scheduler:
   timezone: "UTC"
 
+database:
+  path: "data/datajobs.db"
+  journalMode: "WAL"
+
+questdb:
+  host: "localhost"
+  port: 8812
+  ilpPort: 9009
+  user: "admin"
+  password: "quest"
+  database: "qdb"
+  poolSize: 10
+
 jobs:
   - id: "bulk-es-ingest"
     name: "Bulk ES Futures Data Ingest"
-    cron: "0 0 * * *"  # Daily at midnight
+    cron: "0 0 * * *"
     type: "bulk_ingest"
     handler: "bulk_ingest"
     enabled: true
-    timeout: 3600  # 1 hour
+    timeout: 3600
     retry:
       maxAttempts: 3
       initialDelay: 5000
       maxDelay: 300000
       multiplier: 2.0
     metadata:
-      source: "s3://bucket/es-futures"
+      source: "/data/es-futures.csv"
       targetTable: "es_trades"
+      timestampColumn: "timestamp"
+      symbolColumns:
+        - "symbol"
+        - "exchange"
+      batchSize: 50000
 
   - id: "incremental-trades-update"
     name: "Incremental Trades Update"
-    cron: "*/5 * * * *"  # Every 5 minutes
+    cron: "*/5 * * * *"
     type: "incremental_update"
     handler: "incremental_update"
     enabled: true
-    timeout: 300  # 5 minutes
+    timeout: 300
     retry:
       maxAttempts: 5
       initialDelay: 1000
       maxDelay: 60000
       multiplier: 2.0
     metadata:
-      source: "api/trades"
+      source: "/data/incremental.csv"
+      targetTable: "trades"
+      timestampColumn: "ts"
       batchSize: 1000
+
+  - id: "questdb-maintenance"
+    name: "QuestDB Maintenance"
+    cron: "15 * * * *"
+    type: "maintenance"
+    handler: "questdb_maintenance"
+    enabled: true
+    timeout: 600
+    retry:
+      maxAttempts: 2
+      initialDelay: 2000
+      maxDelay: 30000
+      multiplier: 2.0
+    metadata:
+      operations:
+        - "analyze"
+        - "cleanup"
 
 metrics:
   enabled: true
@@ -53,7 +89,7 @@ metrics:
 tracing:
   enabled: false
   serviceName: "datajobs"
-  exporterType: "stdout"  # otlp, jaeger, stdout
+  exporterType: "stdout"
   endpoint: "localhost:4318"
   insecure: true
 

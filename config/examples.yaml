@@ -39,6 +39,33 @@ scheduler:
   timezone: "UTC"
 
 # -----------------------------------------------------------------------------
+# Database Configuration (SQLite)
+# -----------------------------------------------------------------------------
+database:
+  # Path to SQLite database file (stores job state, sync positions, etc.)
+  path: "data/datajobs.db"
+  # SQLite journal mode: WAL (default, best for concurrent reads), DELETE, MEMORY
+  journalMode: "WAL"
+
+# -----------------------------------------------------------------------------
+# QuestDB Configuration
+# -----------------------------------------------------------------------------
+questdb:
+  # QuestDB host
+  host: "localhost"
+  # PostgreSQL wire protocol port (pg-wire for queries)
+  port: 8812
+  # InfluxDB Line Protocol port (for ingestion)
+  ilpPort: 9009
+  # Authentication
+  user: "admin"
+  password: "quest"
+  # Database name
+  database: "qdb"
+  # Connection pool size
+  poolSize: 10
+
+# -----------------------------------------------------------------------------
 # Job Definitions
 # -----------------------------------------------------------------------------
 # Each job defines a scheduled task with retry behavior and metadata.
@@ -46,8 +73,8 @@ scheduler:
 # -----------------------------------------------------------------------------
 jobs:
   # -------------------------------------------------------------------------
-  # Example: Bulk ES Futures Data Ingest
-  # Runs daily at midnight to ingest historical S3 data into QuestDB
+  # Example: Bulk ES Futures Data Ingest (ILP)
+  # Runs daily at midnight to ingest CSV data into QuestDB via ILP
   # -------------------------------------------------------------------------
   - id: "bulk-es-ingest"
     name: "Bulk ES Futures Data Ingest"
@@ -57,29 +84,27 @@ jobs:
     type: "bulk_ingest"
     # Handler name: maps to registered Go handler function
     handler: "bulk_ingest"
-    # Enable/disable this job (false = won't run on schedule, can still be triggered manually)
+    # Enable/disable this job
     enabled: true
-    # Job execution timeout in seconds (job killed after this duration)
+    # Job execution timeout in seconds
     timeout: 3600  # 1 hour
-    # Retry configuration (applied when job fails)
     retry:
-      # Maximum number of retry attempts after failure
       maxAttempts: 3
-      # Initial delay between retries (milliseconds)
       initialDelay: 5000
-      # Maximum delay between retries (milliseconds)
       maxDelay: 300000
-      # Backoff multiplier (delay = initialDelay * multiplier^attempt)
       multiplier: 2.0
-    # Job-specific configuration (passed to handler as metadata)
     metadata:
-      source: "s3://bucket/es-futures"
+      source: "/data/es-futures.csv"
       targetTable: "es_trades"
+      timestampColumn: "timestamp"
+      symbolColumns:
+        - "symbol"
+        - "exchange"
       batchSize: 50000
 
   # -------------------------------------------------------------------------
-  # Example: Incremental Trades Update
-  # Runs every 5 minutes to fetch and ingest recent trade data
+  # Example: Incremental Trades Update (ILP)
+  # Runs every 5 minutes to ingest recent trade data via ILP
   # -------------------------------------------------------------------------
   - id: "incremental-trades-update"
     name: "Incremental Trades Update"
@@ -95,12 +120,14 @@ jobs:
       maxDelay: 60000
       multiplier: 2.0
     metadata:
-      source: "api/trades"
+      source: "/data/incremental.csv"
+      targetTable: "trades"
+      timestampColumn: "ts"
       batchSize: 1000
 
   # -------------------------------------------------------------------------
   # Example: QuestDB Maintenance
-  # Runs hourly to perform maintenance operations (compaction, cleanup)
+  # Runs hourly to perform maintenance operations (ANALYZE, cleanup)
   # -------------------------------------------------------------------------
   - id: "questdb-maintenance"
     name: "QuestDB Maintenance"
@@ -130,7 +157,7 @@ jobs:
     cron: "*/15 * * * *"
     type: "sync"
     handler: "sqlite_to_questdb"
-    enabled: false  # Disabled by default - enable for testing
+    enabled: false  # Disabled by default
     timeout: 180
     retry:
       maxAttempts: 3
@@ -140,38 +167,30 @@ jobs:
     metadata:
       sourceDb: "/data/local.db"
       targetTable: "local_trades"
+      timestampColumn: "created_at"
 
 # -----------------------------------------------------------------------------
 # Metrics Configuration (Prometheus)
 # -----------------------------------------------------------------------------
 metrics:
-  # Enable Prometheus metrics endpoint
   enabled: true
-  # HTTP path for metrics endpoint
   path: "/metrics"
 
 # -----------------------------------------------------------------------------
 # Distributed Tracing Configuration (OpenTelemetry)
 # -----------------------------------------------------------------------------
 tracing:
-  # Enable OpenTelemetry tracing
   enabled: false
-  # Service name for traces (appears in trace viewer)
   serviceName: "datajobs"
-  # Exporter type: otlp (OTLP protocol), stdout (console output for debugging)
-  exporterType: "stdout"
-  # Collector endpoint (OTLP gRPC endpoint, e.g., localhost:4317)
+  exporterType: "stdout"  # otlp, stdout
   endpoint: "localhost:4317"
-  # Allow insecure connections (for local development)
   insecure: true
 
 # -----------------------------------------------------------------------------
 # Logging Configuration
 # -----------------------------------------------------------------------------
 logging:
-  # Log level: debug, info, warn, error
   level: "info"
-  # Log format: json (structured), text (human-readable)
   format: "json"
 
 # =============================================================================
@@ -182,11 +201,12 @@ logging:
 # Server: SERVER_HOST, SERVER_PORT
 # Worker: WORKER_POOL_SIZE, WORKER_QUEUE_CAPACITY, WORKER_SHUTDOWN_TIMEOUT
 # Scheduler: SCHEDULER_TIMEZONE
+# Database: DATABASE_PATH, DATABASE_JOURNAL_MODE
+# QuestDB: QUESTDB_HOST, QUESTDB_PORT, QUESTDB_ILP_PORT, QUESTDB_USER, QUESTDB_PASSWORD, QUESTDB_DATABASE, QUESTDB_POOL_SIZE
 # Metrics: METRICS_ENABLED, METRICS_PATH
 # Tracing: TRACING_ENABLED, TRACING_SERVICE_NAME, TRACING_EXPORTER, TRACING_ENDPOINT, TRACING_INSECURE
 # Logging: LOG_LEVEL, LOG_FORMAT
 #
 # Per-job overrides (index-based):
 #   JOB_0_ID, JOB_0_CRON, JOB_0_ENABLED, JOB_0_TIMEOUT, JOB_0_RETRY_MAX_ATTEMPTS, ...
-#   JOB_1_ID, JOB_1_CRON, JOB_1_ENABLED, ...
 # =============================================================================

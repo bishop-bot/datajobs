@@ -1,1 +1,31 @@
+Binaries and compiled object files
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 server
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the slash if you want to check in your vendor folder)
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Environment variables
+.env
+
+# Editor/IDE specific files
+.claude/
+.idea/
+.vscode/
+*.swp
+*.swo

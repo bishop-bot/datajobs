@@ -15,8 +15,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/bishop-bot/datajobs/internal/config"
+	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/handlers"
 	"github.com/bishop-bot/datajobs/internal/health"
+	"github.com/bishop-bot/datajobs/internal/ingestion"
 	"github.com/bishop-bot/datajobs/internal/jobs"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/metrics"
@@ -68,6 +70,35 @@ func run() error {
 	// Initialize metrics
 	m := metrics.New("datajobs")
 
+	// Initialize SQLite database
+	sqliteDB, err := database.New(cfg.Database)
+	if err != nil {
+		return fmt.Errorf("failed to initialize SQLite: %w", err)
+	}
+	defer sqliteDB.Close()
+
+	// Run migrations
+	if err := sqliteDB.RunMigrations(ctx); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	// Initialize QuestDB connection pool
+	var questDB *database.QuestDB
+	questDB, err = database.NewQuestDB(cfg.QuestDB)
+	if err != nil {
+		logger.Warn("failed to connect to QuestDB", "error", err, "hint", "check QUESTDB_HOST and QUESTDB_PORT")
+		questDB = nil // Allow server to start without QuestDB
+	} else {
+		defer questDB.Close()
+	}
+
+	// Initialize ILP client for QuestDB ingestion
+	var ilpClient *ingestion.ILPClient
+	if questDB != nil {
+		ilpClient = ingestion.NewILPClient(cfg.QuestDB, m)
+		ingestion.InitILP(cfg.QuestDB, m)
+	}
+
 	// Initialize worker pool
 	pool := worker.NewPool(cfg.Worker, m)
 
@@ -75,6 +106,9 @@ func run() error {
 	for name, handler := range jobs.BuiltInHandlers() {
 		pool.RegisterHandler(name, handler)
 	}
+
+	// Register QuestDB handlers
+	jobs.RegisterQuestDBHandlers(pool, questDB, ilpClient)
 
 	// Initialize scheduler
 	sched := scheduler.New(cfg.Scheduler, pool)
@@ -93,10 +127,17 @@ func run() error {
 
 	// Initialize health server
 	healthServer := health.New(version)
+
+	// Add database health check
+	if questDB != nil {
+		healthServer.AddChecker(&dbHealthChecker{questdb: questDB})
+	}
+	healthServer.AddChecker(&sqliteHealthChecker{db: sqliteDB})
+
 	healthServer.SetReady(true)
 
-	// Initialize HTTP handlers
-	h := handlers.New(sched, pool)
+	// Initialize HTTP handlers with database access
+	h := handlers.New(sched, pool, sqliteDB, questDB)
 
 	// Setup router
 	router := setupRouter(cfg, healthServer, m, h)
@@ -132,6 +173,11 @@ func run() error {
 
 	// Stop scheduler
 	sched.Stop()
+
+	// Close ILP client
+	if ilpClient != nil {
+		ilpClient.Close()
+	}
 
 	// Shutdown HTTP server
 	if err := server.Shutdown(shutdownCtx); err != nil {
@@ -210,6 +256,11 @@ func setupRouter(cfg *config.Config, healthServer *health.Server, m *metrics.Met
 		// Dead letter and stats
 		r.Get("/dead-letter", h.GetDeadLetter)
 		r.Get("/stats", h.GetStats)
+
+		// Database endpoints (QuestDB)
+		r.Get("/questdb/tables", h.ListQuestDBTables)
+		r.Get("/questdb/tables/{name}", h.GetQuestDBTable)
+		r.Post("/questdb/query", h.QueryQuestDB)
 	})
 
 	return r
@@ -223,4 +274,29 @@ type responseWriter struct {
 func (w *responseWriter) WriteHeader(code int) {
 	w.status = code
 	w.ResponseWriter.WriteHeader(code)
+}
+
+// Health checkers
+type dbHealthChecker struct {
+	questdb *database.QuestDB
+}
+
+func (c *dbHealthChecker) Name() string { return "questdb" }
+func (c *dbHealthChecker) Check() (health.Status, string, error) {
+	if err := c.questdb.Ping(context.Background()); err != nil {
+		return health.StatusUnhealthy, "connection failed", err
+	}
+	return health.StatusHealthy, "", nil
+}
+
+type sqliteHealthChecker struct {
+	db *database.DB
+}
+
+func (c *sqliteHealthChecker) Name() string { return "sqlite" }
+func (c *sqliteHealthChecker) Check() (health.Status, string, error) {
+	if err := c.db.Ping(context.Background()); err != nil {
+		return health.StatusUnhealthy, "connection failed", err
+	}
+	return health.StatusHealthy, "", nil
 }
