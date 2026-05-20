@@ -1,0 +1,212 @@
+# =============================================================================
+# DataJobs Server Configuration
+# =============================================================================
+# This file contains all configuration options for the datajobs server.
+# All settings can be overridden via environment variables.
+#
+# Environment Variable Naming Convention:
+#   - Top-level: UPPERCASE (e.g., SERVER_PORT, LOG_LEVEL)
+#   - Nested: Use prefixes (e.g., WORKER_POOL_SIZE, METRICS_ENABLED)
+#   - Per-job: JOB_0_ENABLED, JOB_1_CRON, etc. (index-based)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Server Configuration
+# -----------------------------------------------------------------------------
+server:
+  # Host to bind to (0.0.0.0 for all interfaces)
+  host: "0.0.0.0"
+  # Port to listen on
+  port: 8080
+
+# -----------------------------------------------------------------------------
+# Worker Pool Configuration
+# -----------------------------------------------------------------------------
+worker:
+  # Maximum number of concurrent jobs
+  poolSize: 10
+  # Maximum jobs that can be queued (when pool is busy)
+  queueCapacity: 100
+  # Seconds to wait for jobs to complete during shutdown
+  shutdownTimeout: 30
+
+# -----------------------------------------------------------------------------
+# Scheduler Configuration
+# -----------------------------------------------------------------------------
+scheduler:
+  # Timezone for cron expressions (IANA timezone format)
+  # Common values: "UTC", "America/New_York", "Europe/London"
+  timezone: "UTC"
+
+# -----------------------------------------------------------------------------
+# Database Configuration (SQLite)
+# -----------------------------------------------------------------------------
+database:
+  # Path to SQLite database file (stores job state, sync positions, etc.)
+  path: "data/datajobs.db"
+  # SQLite journal mode: WAL (default, best for concurrent reads), DELETE, MEMORY
+  journalMode: "WAL"
+
+# -----------------------------------------------------------------------------
+# QuestDB Configuration
+# -----------------------------------------------------------------------------
+questdb:
+  # QuestDB host
+  host: "localhost"
+  # PostgreSQL wire protocol port (pg-wire for queries)
+  port: 8812
+  # InfluxDB Line Protocol port (for ingestion)
+  ilpPort: 9009
+  # Authentication
+  user: "admin"
+  password: "quest"
+  # Database name
+  database: "qdb"
+  # Connection pool size
+  poolSize: 10
+
+# -----------------------------------------------------------------------------
+# Job Definitions
+# -----------------------------------------------------------------------------
+# Each job defines a scheduled task with retry behavior and metadata.
+# Jobs can be triggered via the REST API or scheduled via cron.
+# -----------------------------------------------------------------------------
+jobs:
+  # -------------------------------------------------------------------------
+  # Example: Bulk ES Futures Data Ingest (ILP)
+  # Runs daily at midnight to ingest CSV data into QuestDB via ILP
+  # -------------------------------------------------------------------------
+  - id: "bulk-es-ingest"
+    name: "Bulk ES Futures Data Ingest"
+    # Cron: Daily at midnight UTC
+    cron: "0 0 * * *"
+    # Job type: used for categorization and filtering
+    type: "bulk_ingest"
+    # Handler name: maps to registered Go handler function
+    handler: "bulk_ingest"
+    # Enable/disable this job
+    enabled: true
+    # Job execution timeout in seconds
+    timeout: 3600  # 1 hour
+    retry:
+      maxAttempts: 3
+      initialDelay: 5000
+      maxDelay: 300000
+      multiplier: 2.0
+    metadata:
+      source: "/data/es-futures.csv"
+      targetTable: "es_trades"
+      timestampColumn: "timestamp"
+      symbolColumns:
+        - "symbol"
+        - "exchange"
+      batchSize: 50000
+
+  # -------------------------------------------------------------------------
+  # Example: Incremental Trades Update (ILP)
+  # Runs every 5 minutes to ingest recent trade data via ILP
+  # -------------------------------------------------------------------------
+  - id: "incremental-trades-update"
+    name: "Incremental Trades Update"
+    # Cron: Every 5 minutes
+    cron: "*/5 * * * *"
+    type: "incremental_update"
+    handler: "incremental_update"
+    enabled: true
+    timeout: 300  # 5 minutes
+    retry:
+      maxAttempts: 5
+      initialDelay: 1000
+      maxDelay: 60000
+      multiplier: 2.0
+    metadata:
+      source: "/data/incremental.csv"
+      targetTable: "trades"
+      timestampColumn: "ts"
+      batchSize: 1000
+
+  # -------------------------------------------------------------------------
+  # Example: QuestDB Maintenance
+  # Runs hourly to perform maintenance operations (ANALYZE, cleanup)
+  # -------------------------------------------------------------------------
+  - id: "questdb-maintenance"
+    name: "QuestDB Maintenance"
+    # Cron: Every hour at minute 15
+    cron: "15 * * * *"
+    type: "maintenance"
+    handler: "questdb_maintenance"
+    enabled: true
+    timeout: 600  # 10 minutes
+    retry:
+      maxAttempts: 2
+      initialDelay: 2000
+      maxDelay: 30000
+      multiplier: 2.0
+    metadata:
+      operations:
+        - "analyze"
+        - "cleanup"
+
+  # -------------------------------------------------------------------------
+  # Example: SQLite to QuestDB Sync
+  # Runs every 15 minutes to sync data from SQLite to QuestDB
+  # -------------------------------------------------------------------------
+  - id: "sqlite-questdb-sync"
+    name: "SQLite to QuestDB Sync"
+    # Cron: Every 15 minutes
+    cron: "*/15 * * * *"
+    type: "sync"
+    handler: "sqlite_to_questdb"
+    enabled: false  # Disabled by default
+    timeout: 180
+    retry:
+      maxAttempts: 3
+      initialDelay: 1000
+      maxDelay: 30000
+      multiplier: 2.0
+    metadata:
+      sourceDb: "/data/local.db"
+      targetTable: "local_trades"
+      timestampColumn: "created_at"
+
+# -----------------------------------------------------------------------------
+# Metrics Configuration (Prometheus)
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: true
+  path: "/metrics"
+
+# -----------------------------------------------------------------------------
+# Distributed Tracing Configuration (OpenTelemetry)
+# -----------------------------------------------------------------------------
+tracing:
+  enabled: false
+  serviceName: "datajobs"
+  exporterType: "stdout"  # otlp, stdout
+  endpoint: "localhost:4317"
+  insecure: true
+
+# -----------------------------------------------------------------------------
+# Logging Configuration
+# -----------------------------------------------------------------------------
+logging:
+  level: "info"
+  format: "json"
+
+# =============================================================================
+# Environment Variable Reference
+# =============================================================================
+# Override any config value using environment variables:
+#
+# Server: SERVER_HOST, SERVER_PORT
+# Worker: WORKER_POOL_SIZE, WORKER_QUEUE_CAPACITY, WORKER_SHUTDOWN_TIMEOUT
+# Scheduler: SCHEDULER_TIMEZONE
+# Database: DATABASE_PATH, DATABASE_JOURNAL_MODE
+# QuestDB: QUESTDB_HOST, QUESTDB_PORT, QUESTDB_ILP_PORT, QUESTDB_USER, QUESTDB_PASSWORD, QUESTDB_DATABASE, QUESTDB_POOL_SIZE
+# Metrics: METRICS_ENABLED, METRICS_PATH
+# Tracing: TRACING_ENABLED, TRACING_SERVICE_NAME, TRACING_EXPORTER, TRACING_ENDPOINT, TRACING_INSECURE
+# Logging: LOG_LEVEL, LOG_FORMAT
+#
+# Per-job overrides (index-based):
+#   JOB_0_ID, JOB_0_CRON, JOB_0_ENABLED, JOB_0_TIMEOUT, JOB_0_RETRY_MAX_ATTEMPTS, ...
+# =============================================================================
