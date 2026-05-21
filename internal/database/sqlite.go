@@ -28,7 +28,7 @@ func New(cfg config.DatabaseConfig) (*DB, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite3", cfg.Path)
+	db, err := sql.Open("sqlite", cfg.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

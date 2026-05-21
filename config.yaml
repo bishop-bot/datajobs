@@ -13,7 +13,7 @@ scheduler:
   timezone: "UTC"
 
 database:
-  path: "data/datajobs.db"
+  path: "assets/datajobs.db"
   journalMode: "WAL"
 
 questdb:
@@ -93,7 +93,7 @@ jobs:
     cron: "*/60 * * * * *"  # Every 60 seconds
     type: "health_check"
     handler: "ib_ping"
-    enabled: false  # Enable when IB Gateway is running
+    enabled: true
     timeout: 30
     retry:
       maxAttempts: 3
