@@ -111,6 +111,7 @@ datajobs/
 
 - `a9e105a` - feat: add production-grade job server scaffold
 - `4cd2e2c` - feat: add database integration and ILP ingestion support
+- `aeb7412` - feat: add Interactive Brokers Web API client and ib_ping job
 
 ## Next Tasks
 
@@ -118,3 +119,4 @@ datajobs/
 2. Implement SQLite→QuestDB sync job
 3. Implement QuestDB ANALYZE maintenance
 4. Add database package tests
+5. Add IB market data fetching job
