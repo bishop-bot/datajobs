@@ -66,6 +66,18 @@ questdb:
   poolSize: 10
 
 # -----------------------------------------------------------------------------
+# Interactive Brokers Web API Configuration
+# -----------------------------------------------------------------------------
+ib:
+  # Base URL for the IB Client Portal Gateway
+  # Default: https://localhost:5001
+  baseURL: "https://localhost:5001"
+  # Skip TLS certificate verification (for localhost with self-signed cert)
+  insecureSkipVerify: true
+  # Request timeout
+  timeout: 30s
+
+# -----------------------------------------------------------------------------
 # Job Definitions
 # -----------------------------------------------------------------------------
 # Each job defines a scheduled task with retry behavior and metadata.
@@ -73,21 +85,36 @@ questdb:
 # -----------------------------------------------------------------------------
 jobs:
   # -------------------------------------------------------------------------
+  # Example: IB Gateway Ping
+  # Runs every 60 seconds to verify IB Client Portal Gateway connectivity
+  # -------------------------------------------------------------------------
+  - id: "ib-ping"
+    name: "IB Gateway Ping"
+    # Cron: Every 60 seconds
+    cron: "*/60 * * * * *"
+    type: "health_check"
+    handler: "ib_ping"
+    enabled: false  # Enable when IB Gateway is running
+    timeout: 30
+    retry:
+      maxAttempts: 3
+      initialDelay: 1000
+      maxDelay: 10000
+      multiplier: 2.0
+    metadata:
+      description: "Pings the IB Client Portal Gateway to verify connectivity"
+
+  # -------------------------------------------------------------------------
   # Example: Bulk ES Futures Data Ingest (ILP)
   # Runs daily at midnight to ingest CSV data into QuestDB via ILP
   # -------------------------------------------------------------------------
   - id: "bulk-es-ingest"
     name: "Bulk ES Futures Data Ingest"
-    # Cron: Daily at midnight UTC
     cron: "0 0 * * *"
-    # Job type: used for categorization and filtering
     type: "bulk_ingest"
-    # Handler name: maps to registered Go handler function
     handler: "bulk_ingest"
-    # Enable/disable this job
-    enabled: true
-    # Job execution timeout in seconds
-    timeout: 3600  # 1 hour
+    enabled: false
+    timeout: 3600
     retry:
       maxAttempts: 3
       initialDelay: 5000
@@ -209,4 +236,6 @@ logging:
 #
 # Per-job overrides (index-based):
 #   JOB_0_ID, JOB_0_CRON, JOB_0_ENABLED, JOB_0_TIMEOUT, JOB_0_RETRY_MAX_ATTEMPTS, ...
+
+# IB: IB_BASE_URL, IB_INSECURE_SKIP_VERIFY, IB_TIMEOUT
 # =============================================================================

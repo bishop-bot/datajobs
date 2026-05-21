@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
@@ -10,15 +11,16 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Worker   WorkerConfig   `yaml:"worker"`
+	Server    ServerConfig    `yaml:"server"`
+	Worker    WorkerConfig    `yaml:"worker"`
 	Scheduler SchedulerConfig `yaml:"scheduler"`
-	Database DatabaseConfig  `yaml:"database"`
-	QuestDB  QuestDBConfig   `yaml:"questdb"`
-	Jobs     []JobConfig     `yaml:"jobs"`
-	Metrics  MetricsConfig   `yaml:"metrics"`
-	Tracing  TracingConfig   `yaml:"tracing"`
-	Logging  LoggingConfig    `yaml:"logging"`
+	Database  DatabaseConfig  `yaml:"database"`
+	QuestDB   QuestDBConfig   `yaml:"questdb"`
+	IB        IBConfig        `yaml:"ib"`
+	Jobs      []JobConfig     `yaml:"jobs"`
+	Metrics   MetricsConfig    `yaml:"metrics"`
+	Tracing   TracingConfig   `yaml:"tracing"`
+	Logging   LoggingConfig    `yaml:"logging"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -54,6 +56,13 @@ type QuestDBConfig struct {
 	Password string `yaml:"password" env:"QUESTDB_PASSWORD"`
 	Database string `yaml:"database" env:"QUESTDB_DATABASE"`
 	PoolSize int    `yaml:"poolSize" env:"QUESTDB_POOL_SIZE"`
+}
+
+// IBConfig holds Interactive Brokers Web API settings.
+type IBConfig struct {
+	BaseURL             string        `yaml:"baseURL" env:"IB_BASE_URL"`
+	InsecureSkipVerify  bool          `yaml:"insecureSkipVerify" env:"IB_INSECURE_SKIP_VERIFY"`
+	Timeout             time.Duration `yaml:"timeout" env:"IB_TIMEOUT"`
 }
 
 // JobConfig holds per-job configuration.
@@ -222,6 +231,19 @@ func applyEnvOverrides(cfg *Config) {
 		}
 	}
 
+	// IB
+	if v := os.Getenv("IB_BASE_URL"); v != "" {
+		cfg.IB.BaseURL = v
+	}
+	if v := os.Getenv("IB_INSECURE_SKIP_VERIFY"); v != "" {
+		cfg.IB.InsecureSkipVerify = v == "true" || v == "1"
+	}
+	if v := os.Getenv("IB_TIMEOUT"); v != "" {
+		if t, err := strconv.Atoi(v); err == nil {
+			cfg.IB.Timeout = time.Duration(t) * time.Second
+		}
+	}
+
 	// Per-job overrides (iterates through env vars like JOB_0_ENABLED)
 	for i := range cfg.Jobs {
 		prefix := "JOB_" + strconv.Itoa(i) + "_"
@@ -297,6 +319,14 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.QuestDB.PoolSize == 0 {
 		cfg.QuestDB.PoolSize = 10
+	}
+
+	// IB defaults
+	if cfg.IB.BaseURL == "" {
+		cfg.IB.BaseURL = "https://localhost:5001"
+	}
+	if cfg.IB.Timeout == 0 {
+		cfg.IB.Timeout = 30 * time.Second
 	}
 
 	if cfg.Metrics.Path == "" {

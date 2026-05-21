@@ -25,13 +25,19 @@ questdb:
   database: "qdb"
   poolSize: 10
 
+# Interactive Brokers Web API (Client Portal Gateway)
+ib:
+  baseURL: "https://localhost:5001"
+  insecureSkipVerify: true
+  timeout: 30s
+
 jobs:
   - id: "bulk-es-ingest"
     name: "Bulk ES Futures Data Ingest"
     cron: "0 0 * * *"
     type: "bulk_ingest"
     handler: "bulk_ingest"
-    enabled: true
+    enabled: false
     timeout: 3600
     retry:
       maxAttempts: 3
@@ -52,7 +58,7 @@ jobs:
     cron: "*/5 * * * *"
     type: "incremental_update"
     handler: "incremental_update"
-    enabled: true
+    enabled: false
     timeout: 300
     retry:
       maxAttempts: 5
@@ -70,7 +76,7 @@ jobs:
     cron: "15 * * * *"
     type: "maintenance"
     handler: "questdb_maintenance"
-    enabled: true
+    enabled: false
     timeout: 600
     retry:
       maxAttempts: 2
@@ -81,6 +87,21 @@ jobs:
       operations:
         - "analyze"
         - "cleanup"
+
+  - id: "ib-ping"
+    name: "IB Gateway Ping"
+    cron: "*/60 * * * * *"  # Every 60 seconds
+    type: "health_check"
+    handler: "ib_ping"
+    enabled: false  # Enable when IB Gateway is running
+    timeout: 30
+    retry:
+      maxAttempts: 3
+      initialDelay: 1000
+      maxDelay: 10000
+      multiplier: 2.0
+    metadata:
+      description: "Pings the IB Client Portal Gateway to verify connectivity"
 
 metrics:
   enabled: true

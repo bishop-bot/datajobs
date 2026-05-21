@@ -22,6 +22,7 @@ import (
 	"github.com/bishop-bot/datajobs/internal/jobs"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/metrics"
+	"github.com/bishop-bot/datajobs/internal/providers"
 	"github.com/bishop-bot/datajobs/internal/scheduler"
 	"github.com/bishop-bot/datajobs/internal/tracing"
 	"github.com/bishop-bot/datajobs/internal/worker"
@@ -97,6 +98,11 @@ func run() error {
 	if questDB != nil {
 		ilpClient = ingestion.NewILPClient(cfg.QuestDB, m)
 		ingestion.InitILP(cfg.QuestDB, m)
+	}
+
+	// Initialize IB client (optional - server starts even if IB is unavailable)
+	if err := providers.InitIB(cfg.IB); err != nil {
+		logger.Warn("failed to initialize IB client", "error", err, "hint", "check IB_BASE_URL")
 	}
 
 	// Initialize worker pool
@@ -177,6 +183,11 @@ func run() error {
 	// Close ILP client
 	if ilpClient != nil {
 		ilpClient.Close()
+	}
+
+	// Close IB client
+	if ibClient := providers.GetIB(); ibClient != nil {
+		ibClient.Close()
 	}
 
 	// Shutdown HTTP server

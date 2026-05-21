@@ -3,6 +3,7 @@ module github.com/bishop-bot/datajobs
 go 1.26.3
 
 require (
+	github.com/bishop-bot/ibapi-go v0.1.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/mitchellh/mapstructure v1.5.0
