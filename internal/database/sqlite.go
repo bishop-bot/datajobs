@@ -9,6 +9,7 @@ import (
 
 	"github.com/bishop-bot/datajobs/internal/config"
 	"github.com/bishop-bot/datajobs/internal/logging"
+	"github.com/bishop-bot/datajobs/internal/migrate"
 	_ "modernc.org/sqlite" // SQLite driver
 )
 
@@ -98,139 +99,13 @@ func (d *DB) QueryRow(ctx context.Context, query string, args ...interface{}) *s
 	return d.sqlite.QueryRowContext(ctx, query, args...)
 }
 
-// RunMigrations runs all pending migrations.
+// RunMigrations runs all pending migrations from the migrations directory.
 func (d *DB) RunMigrations(ctx context.Context) error {
-	// Create migrations table if not exists
-	if _, err := d.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS schema_migrations (
-			version INTEGER PRIMARY KEY,
-			name TEXT NOT NULL,
-			applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
-	`); err != nil {
-		return fmt.Errorf("failed to create migrations table: %w", err)
-	}
-
-	// Get applied migrations
-	rows, err := d.Query(ctx, "SELECT version FROM schema_migrations ORDER BY version")
-	if err != nil {
-		return fmt.Errorf("failed to get migrations: %w", err)
-	}
-	defer rows.Close()
-
-	applied := make(map[int64]bool)
-	for rows.Next() {
-		var v int64
-		if err := rows.Scan(&v); err != nil {
-			return fmt.Errorf("failed to scan migration: %w", err)
-		}
-		applied[v] = true
-	}
-
-	// Run pending migrations in order
-	for _, m := range allMigrations {
-		if applied[m.Version] {
-			continue
-		}
-
-		logging.Info("running migration", "version", m.Version, "name", m.Name)
-
-		tx, err := d.BeginTx(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to start transaction: %w", err)
-		}
-
-		if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to execute migration %d: %w", m.Version, err)
-		}
-
-		if _, err := tx.ExecContext(ctx,
-			"INSERT INTO schema_migrations (version, name) VALUES (?, ?)",
-			m.Version, m.Name); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to record migration: %w", err)
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("failed to commit migration: %w", err)
-		}
-	}
-
-	return nil
+	migrator := migrate.New(d.sqlite, d.cfg.MigrationsDir)
+	return migrator.Up(ctx)
 }
 
-// Migration represents a database migration.
-type Migration struct {
-	Version int64
-	Name    string
-	SQL     string
-}
-
-// allMigrations contains all database migrations in order.
-var allMigrations = []Migration{
-	{
-		Version: 1,
-		Name:    "create_jobs_table",
-		SQL: `
-			CREATE TABLE IF NOT EXISTS jobs (
-				id TEXT PRIMARY KEY,
-				name TEXT NOT NULL,
-				cron TEXT,
-				type TEXT NOT NULL,
-				handler TEXT NOT NULL,
-				enabled INTEGER DEFAULT 1,
-				timeout INTEGER DEFAULT 300,
-				metadata TEXT,
-				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-			)
-		`,
-	},
-	{
-		Version: 2,
-		Name:    "create_job_runs_table",
-		SQL: `
-			CREATE TABLE IF NOT EXISTS job_runs (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				job_id TEXT NOT NULL,
-				status TEXT NOT NULL,
-				started_at DATETIME NOT NULL,
-				finished_at DATETIME,
-				output TEXT,
-				error TEXT,
-				attempts INTEGER DEFAULT 1,
-				 FOREIGN KEY (job_id) REFERENCES jobs(id)
-			)
-		`,
-	},
-	{
-		Version: 3,
-		Name:    "create_sync_state_table",
-		SQL: `
-			CREATE TABLE IF NOT EXISTS sync_state (
-				id TEXT PRIMARY KEY,
-				source_type TEXT NOT NULL,
-				last_sync_at DATETIME,
-				last_synced_key TEXT,
-				status TEXT DEFAULT 'idle',
-				records_synced INTEGER DEFAULT 0,
-				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-			)
-		`,
-	},
-	{
-		Version: 4,
-		Name:    "create_schemas_table",
-		SQL: `
-			CREATE TABLE IF NOT EXISTS schemas (
-				table_name TEXT PRIMARY KEY,
-				columns TEXT NOT NULL,
-				timestamp_column TEXT,
-				symbol_columns TEXT,
-				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-				updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-			)
-		`,
-	},
+// Migrator returns a new Migrator instance for this database.
+func (d *DB) Migrator() *migrate.Migrator {
+	return migrate.New(d.sqlite, d.cfg.MigrationsDir)
 }
