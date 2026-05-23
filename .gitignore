@@ -23,9 +23,14 @@ go.work.sum
 # Environment variables
 .env
 
-# Editor/IDE specific files
+# Editor/environment specific files
+.DS_Store
 .claude/
 .idea/
 .vscode/
 *.swp
 *.swo
+
+# SQLite files
+*-shm
+*-wal
