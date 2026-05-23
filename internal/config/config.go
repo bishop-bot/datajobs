@@ -43,8 +43,9 @@ type SchedulerConfig struct {
 
 // DatabaseConfig holds SQLite settings.
 type DatabaseConfig struct {
-	Path       string `yaml:"path" env:"DATABASE_PATH"`
-	JournalMode string `yaml:"journalMode" env:"DATABASE_JOURNAL_MODE"`
+	Path         string `yaml:"path" env:"DATABASE_PATH"`
+	JournalMode  string `yaml:"journalMode" env:"DATABASE_JOURNAL_MODE"`
+	MigrationsDir string `yaml:"migrationsDir" env:"DATABASE_MIGRATIONS_DIR"`
 }
 
 // QuestDBConfig holds QuestDB settings.
@@ -296,6 +297,9 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.Database.JournalMode == "" {
 		cfg.Database.JournalMode = "WAL"
+	}
+	if cfg.Database.MigrationsDir == "" {
+		cfg.Database.MigrationsDir = "migrations"
 	}
 
 	// QuestDB defaults
