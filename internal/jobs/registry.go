@@ -3,9 +3,11 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/bishop-bot/datajobs/internal/ingestion"
 	"github.com/bishop-bot/datajobs/internal/logging"
+	"github.com/bishop-bot/datajobs/internal/providers"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 
@@ -45,6 +47,7 @@ func BuiltInHandlers() map[string]worker.JobFunc {
 		"incremental_update":  IncrementalUpdateHandler,
 		"questdb_maintenance": QuestDBMaintenanceHandler,
 		"sqlite_to_questdb":   SQLiteToQuestDBHandler,
+		"ib_ping":             IBPingHandler,
 	}
 }
 
@@ -201,6 +204,25 @@ func SQLiteToQuestDBHandler(ctx context.Context, job worker.Job) (string, error)
 	)
 
 	return "SQLite to QuestDB sync initiated", nil
+}
+
+// IBPingHandler pings the Interactive Brokers Client Portal Gateway.
+func IBPingHandler(ctx context.Context, job worker.Job) (string, error) {
+	logger := logging.FromContext(ctx).With("job_id", job.ID)
+
+	ibClient := providers.GetIB()
+	if ibClient == nil {
+		return "", fmt.Errorf("IB client not initialized")
+	}
+
+	logger.Debug("pinging IB gateway")
+
+	if err := ibClient.Ping(ctx); err != nil {
+		logger.Error("IB ping failed", "error", err)
+		return "", fmt.Errorf("ping failed: %w", err)
+	}
+
+	return fmt.Sprintf("IB gateway ping successful at %s", time.Now().Format(time.RFC3339)), nil
 }
 
 // Helper functions

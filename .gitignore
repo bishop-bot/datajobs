@@ -1,4 +1,4 @@
-Binaries and compiled object files
+# Binaries and compiled object files
 bin/
 *.exe
 *.exe~

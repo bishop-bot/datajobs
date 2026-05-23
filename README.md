@@ -75,12 +75,12 @@ See `config/examples.yaml` for full configuration documentation.
 ├── config/examples.yaml    # Full configuration reference
 ├── internal/
 │   ├── config/             # Configuration loading
-│   ├── handlers/            # REST API handlers
+│   ├── handlers/           # REST API handlers
 │   ├── health/             # Health check endpoints
 │   ├── jobs/               # Built-in job handlers
 │   ├── logging/            # Structured logging
 │   ├── metrics/            # Prometheus metrics
-│   ├── scheduler/           # Cron scheduler
+│   ├── scheduler/          # Cron scheduler
 │   ├── tracing/            # OpenTelemetry tracing
 │   └── worker/             # Bounded worker pool
 └── internal/*_test.go      # Unit tests
