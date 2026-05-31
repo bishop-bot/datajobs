@@ -142,11 +142,13 @@ func run() error {
 
 	healthServer.SetReady(true)
 
-	// Initialize HTTP handlers with database access
-	h := handlers.New(sched, pool, sqliteDB, questDB)
+	// Initialize HTTP handlers
+	jobsHandler := handlers.NewJobsHandler(sched, pool)
+	systemHandler := handlers.NewSystemHandler(sched, pool)
+	questdbHandler := handlers.NewQuestDBHandler(questDB)
 
 	// Setup router
-	router := setupRouter(cfg, healthServer, m, h)
+	router := setupRouter(cfg, healthServer, m, jobsHandler, systemHandler, questdbHandler)
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -204,7 +206,14 @@ func run() error {
 	return nil
 }
 
-func setupRouter(cfg *config.Config, healthServer *health.Server, m *metrics.Metrics, h *handlers.Handler) *chi.Mux {
+func setupRouter(
+	cfg *config.Config,
+	healthServer *health.Server,
+	m *metrics.Metrics,
+	jobsHandler *handlers.JobsHandler,
+	systemHandler *handlers.SystemHandler,
+	questdbHandler *handlers.QuestDBHandler,
+) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -257,21 +266,21 @@ func setupRouter(cfg *config.Config, healthServer *health.Server, m *metrics.Met
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
 		// Job management
-		r.Get("/jobs", h.ListJobs)
-		r.Post("/jobs", h.CreateJob)
-		r.Get("/jobs/{id}", h.GetJob)
-		r.Put("/jobs/{id}", h.UpdateJob)
-		r.Delete("/jobs/{id}", h.DeleteJob)
-		r.Post("/jobs/{id}/run", h.RunJob)
+		r.Get("/jobs", jobsHandler.ListJobs)
+		r.Post("/jobs", jobsHandler.CreateJob)
+		r.Get("/jobs/{id}", jobsHandler.GetJob)
+		r.Put("/jobs/{id}", jobsHandler.UpdateJob)
+		r.Delete("/jobs/{id}", jobsHandler.DeleteJob)
+		r.Post("/jobs/{id}/run", systemHandler.RunJob)
 
 		// Dead letter and stats
-		r.Get("/dead-letter", h.GetDeadLetter)
-		r.Get("/stats", h.GetStats)
+		r.Get("/dead-letter", systemHandler.GetDeadLetter)
+		r.Get("/stats", systemHandler.GetStats)
 
 		// Database endpoints (QuestDB)
-		r.Get("/questdb/tables", h.ListQuestDBTables)
-		r.Get("/questdb/tables/{name}", h.GetQuestDBTable)
-		r.Post("/questdb/query", h.QueryQuestDB)
+		r.Get("/questdb/tables", questdbHandler.ListQuestDBTables)
+		r.Get("/questdb/tables/{name}", questdbHandler.GetQuestDBTable)
+		r.Post("/questdb/query", questdbHandler.QueryQuestDB)
 	})
 
 	return r
