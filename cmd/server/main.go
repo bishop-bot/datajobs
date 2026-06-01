@@ -146,7 +146,7 @@ func run() error {
 	jobsHandler := handlers.NewJobsHandler(sched, pool)
 	systemHandler := handlers.NewSystemHandler(sched, pool)
 	questdbHandler := handlers.NewQuestDBHandler(questDB)
-	marketDataHandler := handlers.NewMarketDataHandler(pool, providers.GetIB(), sqliteDB)
+	marketDataHandler := handlers.NewMarketDataHandler(pool, providers.GetIB(), sqliteDB, questDB)
 
 	// Setup router
 	router := setupRouter(cfg, healthServer, m, jobsHandler, systemHandler, questdbHandler, marketDataHandler)
