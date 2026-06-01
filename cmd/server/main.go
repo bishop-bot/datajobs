@@ -146,9 +146,10 @@ func run() error {
 	jobsHandler := handlers.NewJobsHandler(sched, pool)
 	systemHandler := handlers.NewSystemHandler(sched, pool)
 	questdbHandler := handlers.NewQuestDBHandler(questDB)
+	marketDataHandler := handlers.NewMarketDataHandler(pool, providers.GetIB(), sqliteDB)
 
 	// Setup router
-	router := setupRouter(cfg, healthServer, m, jobsHandler, systemHandler, questdbHandler)
+	router := setupRouter(cfg, healthServer, m, jobsHandler, systemHandler, questdbHandler, marketDataHandler)
 
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -213,6 +214,7 @@ func setupRouter(
 	jobsHandler *handlers.JobsHandler,
 	systemHandler *handlers.SystemHandler,
 	questdbHandler *handlers.QuestDBHandler,
+	marketDataHandler *handlers.MarketDataHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -281,6 +283,10 @@ func setupRouter(
 		r.Get("/questdb/tables", questdbHandler.ListQuestDBTables)
 		r.Get("/questdb/tables/{name}", questdbHandler.GetQuestDBTable)
 		r.Post("/questdb/query", questdbHandler.QueryQuestDB)
+
+		// Market data endpoints (IB)
+		r.Get("/marketdata/history", marketDataHandler.GetHistoricalData)
+		r.Get("/marketdata/instruments", marketDataHandler.ListInstruments)
 	})
 
 	return r
