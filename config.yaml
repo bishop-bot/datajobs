@@ -90,7 +90,7 @@ jobs:
 
   - id: "ib-ping"
     name: "IB Gateway Ping"
-    cron: "*/1 * * * *"  # Every minute
+    cron: "*/5 * * * *"  # Every 5 minutes
     type: "health_check"
     handler: "ib_ping"
     enabled: true
