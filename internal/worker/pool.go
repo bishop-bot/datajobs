@@ -57,11 +57,15 @@ type Pool struct {
 	jobChan  chan Job
 	deadLetter chan DeadLetterJob
 	deadLetterQ []DeadLetterJob
+	deadLetterMu sync.Mutex
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
 	mu       sync.Mutex
 	running  bool
 }
+
+// MaxDeadLetterSize is the maximum number of dead letter entries to keep.
+const MaxDeadLetterSize = 1000
 
 // NewPool creates a new worker pool with bounded concurrency.
 func NewPool(cfg config.WorkerConfig, m *metrics.Metrics) *Pool {
@@ -237,27 +241,50 @@ func (p *Pool) sendToDeadLetter(ctx context.Context, job Job, reason, errMsg str
 		Reason:   reason,
 	}
 
-	p.mu.Lock()
+	p.deadLetterMu.Lock()
+	if len(p.deadLetterQ) >= MaxDeadLetterSize {
+		// Drop oldest entry to make room
+		p.deadLetterQ = p.deadLetterQ[1:]
+	}
 	p.deadLetterQ = append(p.deadLetterQ, dl)
-	p.mu.Unlock()
+	p.deadLetterMu.Unlock()
 
 	select {
 	case p.deadLetter <- dl:
 		p.metrics.RecordDeadLetter(ctx, job.ID, reason)
 	default:
-		// Channel full, already stored in queue
+		// Channel full, already stored in slice
 	}
 }
 
 func (p *Pool) processDeadLetter() {
 	defer p.wg.Done()
 
-	for dl := range p.deadLetter {
-		logging.Info("job sent to dead letter",
-			"job_id", dl.Job.ID,
-			"reason", dl.Reason,
-			"error", dl.Error,
-		)
+	for {
+		select {
+		case <-p.stopCh:
+			return
+		case dl, ok := <-p.deadLetter:
+			if !ok {
+				return // Channel closed
+			}
+			// Trim dead letter queue if it exceeds max size
+			p.deadLetterMu.Lock()
+			if len(p.deadLetterQ) >= MaxDeadLetterSize {
+				// Remove oldest entries (keep only half)
+				keep := MaxDeadLetterSize / 2
+				p.deadLetterQ = p.deadLetterQ[len(p.deadLetterQ)-keep:]
+			}
+			p.deadLetterQ = append(p.deadLetterQ, dl)
+			p.deadLetterMu.Unlock()
+
+			logging.Info("job sent to dead letter",
+				"job_id", dl.Job.ID,
+				"reason", dl.Reason,
+				"error", dl.Error,
+				"dlq_size", len(p.deadLetterQ),
+			)
+		}
 	}
 }
 
@@ -283,8 +310,8 @@ func (p *Pool) Stop() {
 
 // GetDeadLetterQueue returns the current dead letter queue.
 func (p *Pool) GetDeadLetterQueue() []DeadLetterJob {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.deadLetterMu.Lock()
+	defer p.deadLetterMu.Unlock()
 
 	result := make([]DeadLetterJob, len(p.deadLetterQ))
 	copy(result, p.deadLetterQ)
@@ -293,8 +320,8 @@ func (p *Pool) GetDeadLetterQueue() []DeadLetterJob {
 
 // GetDeadLetterCount returns the number of jobs in the dead letter queue.
 func (p *Pool) GetDeadLetterCount() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.deadLetterMu.Lock()
+	defer p.deadLetterMu.Unlock()
 	return len(p.deadLetterQ)
 }
 
