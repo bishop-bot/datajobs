@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bishop-bot/datajobs/internal/database"
+	"github.com/bishop-bot/datajobs/internal/ingestion"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/providers"
 	"github.com/bishop-bot/datajobs/internal/worker"
@@ -236,15 +237,13 @@ func fetchInstrumentOHLCV(ctx context.Context, ibClient *providers.IBClient, ins
 	// Convert to OHLCV bars
 	bars := make([]database.OHLCVBar, 0, len(resp.Data))
 	for _, ibBar := range resp.Data {
-		// Convert timestamp from milliseconds to nanoseconds (ibBar.T is in ms)
-		ts := ibBar.T * 1_000_000 // ms to ns
-		tsEnd := ts + barDurationNs(params.Bar)
-
+		// Convert timestamp from milliseconds to nanoseconds
+		ts := ibBar.T * 1_000_000
 		bars = append(bars, database.OHLCVBar{
 			Symbol:    instr.Symbol,
 			Publisher: defaultPublisher,
 			Ts:        ts,
-			TsEnd:     tsEnd,
+			TsEnd:     ts + ingestion.BarDurationNs(params.Bar),
 			Open:      ibBar.O,
 			High:      ibBar.H,
 			Low:       ibBar.L,
@@ -276,52 +275,6 @@ func upsertOHLCVBatches(ctx context.Context, questDB *database.QuestDB, bars []d
 		)
 	}
 	return nil
-}
-
-// barDurationNs returns the duration in nanoseconds for a bar size.
-func barDurationNs(bar string) int64 {
-	switch bar {
-	case "1s":
-		return 1 * 1_000_000_000
-	case "5s":
-		return 5 * 1_000_000_000
-	case "10s":
-		return 10 * 1_000_000_000
-	case "15s":
-		return 15 * 1_000_000_000
-	case "30s":
-		return 30 * 1_000_000_000
-	case "1m":
-		return 60 * 1_000_000_000
-	case "2m":
-		return 2 * 60 * 1_000_000_000
-	case "3m":
-		return 3 * 60 * 1_000_000_000
-	case "5m":
-		return 5 * 60 * 1_000_000_000
-	case "10m":
-		return 10 * 60 * 1_000_000_000
-	case "15m":
-		return 15 * 60 * 1_000_000_000
-	case "30m":
-		return 30 * 60 * 1_000_000_000
-	case "1h":
-		return 60 * 60 * 1_000_000_000
-	case "2h":
-		return 2 * 60 * 60 * 1_000_000_000
-	case "3h":
-		return 3 * 60 * 60 * 1_000_000_000
-	case "4h":
-		return 4 * 60 * 60 * 1_000_000_000
-	case "8h":
-		return 8 * 60 * 60 * 1_000_000_000
-	case "1d":
-		return 24 * 60 * 60 * 1_000_000_000
-	case "1w":
-		return 7 * 24 * 60 * 60 * 1_000_000_000
-	default:
-		return 24 * 60 * 60 * 1_000_000_000 // Default to 1 day
-	}
 }
 
 // getStr extracts a string from metadata with default.

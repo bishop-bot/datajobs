@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/bishop-bot/datajobs/internal/database"
+	"github.com/bishop-bot/datajobs/internal/ingestion"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/providers"
 	"github.com/bishop-bot/datajobs/internal/worker"
@@ -123,11 +124,13 @@ func (h *MarketDataHandler) DownloadHistoricalData(
 
 	bars := make([]database.OHLCVBar, 0, len(ibData.Data))
 	for _, ibBar := range ibData.Data {
+		// Convert timestamp from milliseconds to nanoseconds
+		ts := ibBar.T * 1_000_000
 		bars = append(bars, database.OHLCVBar{
 			Symbol:    ibData.Symbol,
 			Publisher: publisher,
-			Ts:        ibBar.T,
-			TsEnd:     ibBar.T + (barDurationNs(bar)), // Estimate end time
+			Ts:        ts,
+			TsEnd:     ts + ingestion.BarDurationNs(bar),
 			Open:      ibBar.O,
 			High:      ibBar.H,
 			Low:       ibBar.L,
@@ -187,43 +190,7 @@ func (h *MarketDataHandler) lookupConidAndExchange(ctx context.Context, symbol, 
 	return id, exchFromDB, nil
 }
 
-// barDurationNs returns the approximate duration in nanoseconds for a bar size.
-func barDurationNs(bar string) int64 {
-	switch bar {
-	case "1min":
-		return 60 * 1_000_000_000
-	case "2mins":
-		return 2 * 60 * 1_000_000_000
-	case "3mins":
-		return 3 * 60 * 1_000_000_000
-	case "5mins":
-		return 5 * 60 * 1_000_000_000
-	case "10mins":
-		return 10 * 60 * 1_000_000_000
-	case "15mins":
-		return 15 * 60 * 1_000_000_000
-	case "20mins":
-		return 20 * 60 * 1_000_000_000
-	case "30mins":
-		return 30 * 60 * 1_000_000_000
-	case "1hour":
-		return 60 * 60 * 1_000_000_000
-	case "2hour":
-		return 2 * 60 * 60 * 1_000_000_000
-	case "3hour":
-		return 3 * 60 * 60 * 1_000_000_000
-	case "4hour":
-		return 4 * 60 * 60 * 1_000_000_000
-	case "8hour":
-		return 8 * 60 * 60 * 1_000_000_000
-	case "1day":
-		return 24 * 60 * 60 * 1_000_000_000
-	case "1week":
-		return 7 * 24 * 60 * 60 * 1_000_000_000
-	default:
-		return 5 * 60 * 1_000_000_000 // Default to 5min
-	}
-}
+
 
 func (h *MarketDataHandler) GetHistoricalData(w http.ResponseWriter, r *http.Request) {
 	if h.ibClient == nil {

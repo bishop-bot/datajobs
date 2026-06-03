@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -26,6 +25,7 @@ type Job struct {
 	Handler string
 	Enabled bool
 	Timeout time.Duration
+	Retry   config.RetryConfig
 }
 
 // Scheduler manages scheduled jobs.
@@ -58,8 +58,6 @@ func New(cfg config.SchedulerConfig, pool *worker.Pool) *Scheduler {
 		}
 	}
 
-	_ = fmt.Sprintf // suppress unused import warning
-
 	return s
 }
 
@@ -73,6 +71,7 @@ func (s *Scheduler) AddJob(cfg config.JobConfig) error {
 		Handler: cfg.Handler,
 		Enabled: cfg.Enabled,
 		Timeout: time.Duration(cfg.Timeout) * time.Second,
+		Retry:   cfg.Retry,
 	}
 
 	s.mu.Lock()
@@ -128,16 +127,21 @@ func (s *Scheduler) executeJob(ctx context.Context, job Job) {
 	)
 	defer span.End()
 
-	wj := worker.Job{
+	wjob := worker.Job{
 		ID:       job.ID,
 		Type:     job.Type,
 		Handler:  job.Handler,
 		Metadata: make(map[string]interface{}),
-		Retry:    config.RetryConfig{MaxAttempts: 3}, // Default retry config
+		Retry:    config.RetryConfig{MaxAttempts: 3},
 		Timeout:  job.Timeout,
 	}
 
-	if err := s.pool.Submit(ctx, wj); err != nil {
+	// Use job config's retry settings if available (not zero values)
+	if job.Retry.MaxAttempts > 0 {
+		wjob.Retry = job.Retry
+	}
+
+	if err := s.pool.Submit(ctx, wjob); err != nil {
 		logger.Error("failed to submit job", "error", err)
 	}
 }

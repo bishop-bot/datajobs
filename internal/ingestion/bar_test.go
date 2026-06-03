@@ -1,9 +1,7 @@
-package handlers
+package ingestion
 
 import (
 	"testing"
-
-	"github.com/bishop-bot/datajobs/internal/ingestion"
 )
 
 func TestBarDurationNs(t *testing.T) {
@@ -23,6 +21,7 @@ func TestBarDurationNs(t *testing.T) {
 		{"5m", 5 * 60 * 1_000_000_000},
 		{"10m", 10 * 60 * 1_000_000_000},
 		{"15m", 15 * 60 * 1_000_000_000},
+		{"20m", 20 * 60 * 1_000_000_000},
 		{"30m", 30 * 60 * 1_000_000_000},
 		{"1h", 60 * 60 * 1_000_000_000},
 		{"2h", 2 * 60 * 60 * 1_000_000_000},
@@ -35,7 +34,7 @@ func TestBarDurationNs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.bar, func(t *testing.T) {
-			result := ingestion.BarDurationNs(tt.bar)
+			result := BarDurationNs(tt.bar)
 			if result != tt.expected {
 				t.Errorf("BarDurationNs(%s): expected %d, got %d", tt.bar, tt.expected, result)
 			}
@@ -43,28 +42,25 @@ func TestBarDurationNs(t *testing.T) {
 	}
 }
 
-func TestBarDurationNsEdgeCases(t *testing.T) {
-	// Test empty string falls back to default (5min)
-	result := ingestion.BarDurationNs("")
-	if result != 5*60*1_000_000_000 {
-		t.Errorf("expected default 5min duration for empty string, got %d", result)
-	}
-
-	// Test unrecognized formats fall back to default
+func TestBarDurationNsDefault(t *testing.T) {
+	// Test that unknown bar sizes default to 5 minutes
 	tests := []struct {
 		bar      string
 		expected int64
 	}{
-		{"1min", 5 * 60 * 1_000_000_000},   // unrecognized, defaults to 5min
-		{"1hour", 5 * 60 * 1_000_000_000},   // unrecognized, defaults to 5min
-		{"1day", 5 * 60 * 1_000_000_000},    // unrecognized, defaults to 5min
-		{"unknown", 5 * 60 * 1_000_000_000}, // unrecognized, defaults to 5min
+		{"", 5 * 60 * 1_000_000_000},
+		{"unknown", 5 * 60 * 1_000_000_000},
+		{"1min", 5 * 60 * 1_000_000_000},  // IB uses "1m" not "1min"
+		{"1hour", 5 * 60 * 1_000_000_000}, // IB uses "1h" not "1hour"
+		{"1day", 5 * 60 * 1_000_000_000},  // IB uses "1d" not "1day"
 	}
 
 	for _, tt := range tests {
-		result := ingestion.BarDurationNs(tt.bar)
-		if result != tt.expected {
-			t.Errorf("BarDurationNs(%s): expected %d, got %d", tt.bar, tt.expected, result)
-		}
+		t.Run(tt.bar, func(t *testing.T) {
+			result := BarDurationNs(tt.bar)
+			if result != tt.expected {
+				t.Errorf("BarDurationNs(%s): expected %d, got %d", tt.bar, tt.expected, result)
+			}
+		})
 	}
 }
