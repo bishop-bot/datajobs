@@ -32,6 +32,7 @@ func TestPoolCreation(t *testing.T) {
 	}
 	m := getMetrics()
 	pool := NewPool(cfg, m)
+	defer pool.Stop()
 
 	if pool == nil {
 		t.Fatal("expected non-nil pool")
@@ -46,6 +47,7 @@ func TestPoolRegisterHandler(t *testing.T) {
 	cfg := config.WorkerConfig{PoolSize: 5, QueueCapacity: 10}
 	m := getMetrics()
 	pool := NewPool(cfg, m)
+	defer pool.Stop()
 
 	var executed bool
 	// Register a handler that sets executed to true
@@ -82,6 +84,7 @@ func TestPoolSubmitJob(t *testing.T) {
 	}
 	m := getMetrics()
 	pool := NewPool(cfg, m)
+	defer pool.Stop()
 
 	var executed bool
 	pool.RegisterHandler("test-submit", func(ctx context.Context, job Job) (string, error) {
@@ -111,46 +114,60 @@ func TestPoolSubmitJob(t *testing.T) {
 }
 
 func TestPoolQueueFull(t *testing.T) {
+	// Test that submit fails when the queue is full
 	cfg := config.WorkerConfig{
-		PoolSize:        1,
-		QueueCapacity:   1,
-		ShutdownTimeout: 30,
+		PoolSize:      1, // Only 1 worker
+		QueueCapacity: 1, // Only 1 job in queue
 	}
 	m := getMetrics()
 	pool := NewPool(cfg, m)
+	defer pool.Stop()
 
 	pool.RegisterHandler("blocking", func(ctx context.Context, job Job) (string, error) {
-		time.Sleep(500 * time.Millisecond)
+		// Processing time doesn't matter for this test
+		time.Sleep(50 * time.Millisecond)
 		return "done", nil
 	})
 
-	// Submit first job (will block)
+	// Submit first job - goes to queue (worker picks it up asynchronously)
 	job1 := Job{
 		ID:      "job1",
 		Handler: "blocking",
 		Retry:   config.RetryConfig{MaxAttempts: 1},
 		Timeout: 5 * time.Second,
 	}
-	pool.Submit(context.Background(), job1)
+	err := pool.Submit(context.Background(), job1)
+	if err != nil {
+		t.Fatalf("first submit should succeed: %v", err)
+	}
 
-	// Small delay to ensure first job is being processed
-	time.Sleep(50 * time.Millisecond)
-
-	// Try to submit second job (queue should be full)
+	// Immediately submit second job - the queue is at capacity
+	// because job1 is still in the queue (worker hasn't picked it up yet)
 	job2 := Job{
 		ID:      "job2",
 		Handler: "blocking",
 		Retry:   config.RetryConfig{MaxAttempts: 1},
 		Timeout: 5 * time.Second,
 	}
-	err := pool.Submit(context.Background(), job2)
-
+	err = pool.Submit(context.Background(), job2)
 	if err != ErrQueueFull {
 		t.Errorf("expected ErrQueueFull, got %v", err)
 	}
 
-	// Wait for first job to complete
-	time.Sleep(600 * time.Millisecond)
+	// Wait for job1 to complete and be removed from queue
+	time.Sleep(100 * time.Millisecond)
+
+	// Now job2 can be submitted (queue has space)
+	job3 := Job{
+		ID:      "job3",
+		Handler: "blocking",
+		Retry:   config.RetryConfig{MaxAttempts: 1},
+		Timeout: 5 * time.Second,
+	}
+	err = pool.Submit(context.Background(), job3)
+	if err != nil {
+		t.Errorf("third submit should succeed after space opens: %v", err)
+	}
 }
 
 func TestCalculateBackoff(t *testing.T) {
@@ -188,6 +205,7 @@ func TestDeadLetterQueue(t *testing.T) {
 	}
 	m := getMetrics()
 	pool := NewPool(cfg, m)
+	defer pool.Stop()
 
 	pool.RegisterHandler("always-fail", func(ctx context.Context, job Job) (string, error) {
 		return "", &testError{"always fails"}
@@ -223,6 +241,7 @@ func TestJobMetadata(t *testing.T) {
 	cfg := config.WorkerConfig{PoolSize: 1, QueueCapacity: 10}
 	m := getMetrics()
 	pool := NewPool(cfg, m)
+	defer pool.Stop()
 
 	var capturedJob Job
 	pool.RegisterHandler("capture-metadata", func(ctx context.Context, job Job) (string, error) {
@@ -266,6 +285,7 @@ func TestWorkerPoolConcurrency(t *testing.T) {
 	}
 	m := getMetrics()
 	pool := NewPool(cfg, m)
+	defer pool.Stop()
 
 	var counter atomic.Int64
 	pool.RegisterHandler("counter-concurrent", func(ctx context.Context, job Job) (string, error) {
@@ -300,6 +320,7 @@ func TestPoolQueueDepth(t *testing.T) {
 	}
 	m := getMetrics()
 	pool := NewPool(cfg, m)
+	defer pool.Stop()
 
 	pool.RegisterHandler("slow", func(ctx context.Context, job Job) (string, error) {
 		time.Sleep(200 * time.Millisecond)
@@ -340,5 +361,131 @@ func TestPoolGetDeadLetterCount(t *testing.T) {
 	count := pool.GetDeadLetterCount()
 	if count != 0 {
 		t.Errorf("expected initial DLQ count 0, got %d", count)
+	}
+}
+
+func TestPoolBoundedConcurrency(t *testing.T) {
+	// Test that PoolSize actually limits concurrent execution
+	cfg := config.WorkerConfig{
+		PoolSize:      2, // Only 2 workers
+		QueueCapacity: 100,
+	}
+	m := getMetrics()
+	pool := NewPool(cfg, m)
+	defer pool.Stop()
+
+	var maxConcurrent atomic.Int32
+	var currentConcurrent atomic.Int32
+
+	pool.RegisterHandler("concurrent-limit", func(ctx context.Context, job Job) (string, error) {
+		inc := currentConcurrent.Add(1)
+		// Track max concurrent
+		for {
+			old := maxConcurrent.Load()
+			if inc <= old || maxConcurrent.CompareAndSwap(old, inc) {
+				break
+			}
+		}
+
+		// Simulate work
+		time.Sleep(100 * time.Millisecond)
+
+		currentConcurrent.Add(-1)
+		return "done", nil
+	})
+
+	// Submit 20 jobs rapidly
+	for i := 0; i < 20; i++ {
+		job := Job{
+			ID:      "bounded",
+			Handler: "concurrent-limit",
+			Retry:   config.RetryConfig{MaxAttempts: 1},
+			Timeout: 5 * time.Second,
+		}
+		if err := pool.Submit(context.Background(), job); err != nil {
+			t.Fatalf("submit failed: %v", err)
+		}
+	}
+
+	// Wait for all jobs to complete
+	time.Sleep(2 * time.Second)
+
+	// Verify max concurrent never exceeded PoolSize
+	maxConcurrentJobs := maxConcurrent.Load()
+	if maxConcurrentJobs > int32(cfg.PoolSize) {
+		t.Errorf("max concurrent %d exceeded PoolSize %d", maxConcurrentJobs, cfg.PoolSize)
+	}
+}
+
+func TestPoolGracefulShutdown(t *testing.T) {
+	cfg := config.WorkerConfig{
+		PoolSize:      2,
+		QueueCapacity: 10,
+	}
+	m := getMetrics()
+	pool := NewPool(cfg, m)
+
+	var completed int32
+	pool.RegisterHandler("shutdown-test", func(ctx context.Context, job Job) (string, error) {
+		time.Sleep(100 * time.Millisecond)
+		atomic.AddInt32(&completed, 1)
+		return "done", nil
+	})
+
+	// Submit jobs
+	for i := 0; i < 5; i++ {
+		job := Job{
+			ID:      "shutdown",
+			Handler: "shutdown-test",
+			Retry:   config.RetryConfig{MaxAttempts: 1},
+			Timeout: 5 * time.Second,
+		}
+		pool.Submit(context.Background(), job)
+	}
+
+	// Give some time for jobs to start processing
+	time.Sleep(50 * time.Millisecond)
+
+	// Stop should wait for in-progress jobs
+	pool.Stop()
+
+	// At least some jobs should have completed (may be 2-5 depending on timing)
+	if completed < 2 {
+		t.Errorf("expected at least 2 completed, got %d", completed)
+	}
+}
+
+func TestPoolStopIdempotent(t *testing.T) {
+	cfg := config.WorkerConfig{
+		PoolSize:      1,
+		QueueCapacity: 10,
+	}
+	m := getMetrics()
+	pool := NewPool(cfg, m)
+
+	// Stop multiple times should not panic
+	pool.Stop()
+	pool.Stop()
+}
+
+func TestPoolSubmitAfterStop(t *testing.T) {
+	cfg := config.WorkerConfig{
+		PoolSize:      1,
+		QueueCapacity: 10,
+	}
+	m := getMetrics()
+	pool := NewPool(cfg, m)
+	pool.Stop()
+
+	// Submit after stop should fail
+	job := Job{
+		ID:      "after-stop",
+		Handler: "noop",
+		Retry:   config.RetryConfig{MaxAttempts: 1},
+		Timeout: 5 * time.Second,
+	}
+	err := pool.Submit(context.Background(), job)
+	if err == nil {
+		t.Error("expected error submitting after stop")
 	}
 }
