@@ -203,8 +203,18 @@ func (p *Pool) executeJob(job Job, attempt int) {
 			logger.Info("scheduling retry", "next_attempt", nextAttempt+1, "backoff", backoff)
 			p.metrics.RecordJobRetry(ctx, job.ID)
 
-			// Sleep for backoff, then re-queue
-			time.Sleep(backoff)
+			// Update queue depth (job is leaving the queue on retry)
+			p.metrics.SetQueueDepth(len(p.jobChan))
+
+			// Sleep for backoff with context cancellation support
+			select {
+			case <-time.After(backoff):
+				// Backoff complete, proceed to re-queue
+			case <-ctx.Done():
+				logger.Warn("retry cancelled due to context", "job_id", job.ID)
+				p.sendToDeadLetter(ctx, job, "context_cancelled", ctx.Err().Error())
+				return
+			}
 
 			// Re-queue the job (bounded by channel capacity)
 			select {
