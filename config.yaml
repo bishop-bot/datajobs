@@ -10,7 +10,7 @@ worker:
   shutdownTimeout: 30
 
 scheduler:
-  timezone: "UTC"
+  timezone: "Asia/Hong_Kong"
 
 database:
   path: "assets/datajobs.db"
@@ -102,6 +102,28 @@ jobs:
       multiplier: 2.0
     metadata:
       description: "Pings the IB Client Portal Gateway to verify connectivity"
+
+  - id: "historical-data-ingest"
+    name: "Historical Market Data Ingest"
+    cron: "0 6 * * *"  # Daily at 06:00 HKT
+    type: "market_data"
+    handler: "historical_data"
+    enabled: false
+    timeout: 7200
+    retry:
+      maxAttempts: 2
+      initialDelay: 30000
+      maxDelay: 300000
+      multiplier: 2.0
+    metadata:
+      description: "Fetches historical OHLCV data from IB and stores in QuestDB"
+      period: "5y"
+      bar: "1d"
+      outsideRth: false
+      # Optional: specific instruments to fetch (empty = all from database)
+      # instruments:
+      #   - "265598"
+      #   - "8314"
 
 metrics:
   enabled: true

@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 
+	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/ingestion"
 	jobingestion "github.com/bishop-bot/datajobs/internal/jobs/ingestion"
 	jobquestdb "github.com/bishop-bot/datajobs/internal/jobs/questdb"
@@ -52,7 +53,7 @@ func BuiltInHandlers() map[string]worker.JobFunc {
 }
 
 // RegisterQuestDBHandlers registers QuestDB-specific handlers.
-func RegisterQuestDBHandlers(pool *worker.Pool, _ interface{}, ilp *ingestion.ILPClient) {
+func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqliteDB *database.DB, ilp *ingestion.ILPClient) {
 	// Register bulk ingest with ILP
 	pool.RegisterHandler("bulk_ingest", func(ctx context.Context, job worker.Job) (string, error) {
 		return jobingestion.BulkIngestWithILP(ctx, job, ilp)
@@ -68,4 +69,9 @@ func RegisterQuestDBHandlers(pool *worker.Pool, _ interface{}, ilp *ingestion.IL
 
 	// Register SQLite to QuestDB sync
 	pool.RegisterHandler("sqlite_to_questdb", jobingestion.SQLiteToQuestDBHandler)
+
+	// Register historical data handler
+	if questDB != nil && sqliteDB != nil {
+		pool.RegisterHandler("historical_data", providers.HistoricalDataHandlerWithDB(questDB, sqliteDB))
+	}
 }
