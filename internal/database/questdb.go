@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bishop-bot/datajobs/internal/config"
@@ -140,12 +141,135 @@ type HealthChecker interface {
 	Ping(ctx context.Context) error
 }
 
+// OHLCVBar represents a single OHLCV candlestick bar for QuestDB ingestion.
+type OHLCVBar struct {
+	// Symbol is the instrument symbol (e.g., "AAPL", "IBM")
+	Symbol string `json:"symbol"`
+	// Publisher is the data source/publisher (e.g., "IB", "NASDAQ")
+	Publisher string `json:"publisher"`
+	// Ts is the bar start timestamp (nanoseconds since epoch)
+	Ts int64 `json:"ts"`
+	// TsEnd is the bar end timestamp (nanoseconds since epoch)
+	TsEnd int64 `json:"ts_end"`
+	// Open is the opening price
+	Open float64 `json:"open"`
+	// High is the highest price
+	High float64 `json:"high"`
+	// Low is the lowest price
+	Low float64 `json:"low"`
+	// Close is the closing price
+	Close float64 `json:"close"`
+	// Volume is the trading volume
+	Volume int64 `json:"volume"`
+}
+
+// ToSlice converts OHLCVBar slice to interface slice for generic handling.
+func (b OHLCVBar) ToSlice() []interface{} {
+	return []interface{}{
+		b.Symbol,
+		b.Publisher,
+		b.Ts,
+		b.TsEnd,
+		b.Open,
+		b.High,
+		b.Low,
+		b.Close,
+		b.Volume,
+	}
+}
+
+// OHLCVColumns returns the column names for the ohlcv_bars table.
+func OHLCVColumns() []string {
+	return []string{"symbol", "publisher", "ts", "ts_end", "open", "high", "low", "close", "volume"}
+}
+
+// OHLCVUpsertResult contains the result of an upsert operation.
+type OHLCVUpsertResult struct {
+	RowsAffected int
+	Duration     time.Duration
+	Errors       []string
+}
+
+// UpsertOHLCVBars performs a bulk upsert of OHLCV bars into QuestDB.
+// It uses ON CONFLICT DO UPDATE to handle re-ingestion of historical data.
+// The upsert key is (symbol, ts) to avoid duplicates.
+func (q *QuestDB) UpsertOHLCVBars(ctx context.Context, bars []OHLCVBar) (*OHLCVUpsertResult, error) {
+	if len(bars) == 0 {
+		return &OHLCVUpsertResult{RowsAffected: 0}, nil
+	}
+
+	start := time.Now()
+	result := &OHLCVUpsertResult{}
+
+	// Build the upsert query
+	columns := OHLCVColumns()
+	placeholders := make([]string, len(bars))
+	values := make([]interface{}, 0, len(bars)*len(columns))
+
+	for i, bar := range bars {
+		// Create placeholders for each row: ($1, $2, ...), ($9, $10, ...), etc.
+		base := i*len(columns) + 1
+		rowPlaceholders := make([]string, len(columns))
+		for j := range columns {
+			rowPlaceholders[j] = fmt.Sprintf("$%d", base+j)
+		}
+		placeholders[i] = fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", "))
+		values = append(values, bar.ToSlice()...)
+	}
+
+	query := fmt.Sprintf(`
+		INSERT INTO ohlcv_bars (%s)
+		VALUES %s
+		ON CONFLICT (symbol, ts) DO UPDATE SET
+			publisher = EXCLUDED.publisher,
+			ts_end = EXCLUDED.ts_end,
+			open = EXCLUDED.open,
+			high = EXCLUDED.high,
+			low = EXCLUDED.low,
+			close = EXCLUDED.close,
+			volume = EXCLUDED.volume
+	`, strings.Join(columns, ", "), strings.Join(placeholders, ", "))
+
+	rows, err := q.pool.Exec(ctx, query, values...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upsert OHLCV bars: %w", err)
+	}
+
+	result.RowsAffected = int(rows.RowsAffected())
+	result.Duration = time.Since(start)
+
+	logging.Debug("upserted OHLCV bars",
+		"rows", result.RowsAffected,
+		"duration", result.Duration,
+	)
+
+	return result, nil
+}
+
+// EnsureTableOHLCV creates the ohlcv_bars table if it doesn't exist.
+func (q *QuestDB) EnsureTableOHLCV(ctx context.Context) error {
+	const createSQL = `
+		CREATE TABLE IF NOT EXISTS ohlcv_bars (
+			symbol    SYMBOL,
+			publisher SYMBOL,
+			ts        TIMESTAMP_NS,
+			ts_end    TIMESTAMP_NS,
+			open      DOUBLE,
+			high      DOUBLE,
+			low       DOUBLE,
+			close     DOUBLE,
+			volume    LONG
+		) TIMESTAMP(ts) PARTITION BY DAY
+	`
+	return q.Exec(ctx, createSQL)
+}
+
 // TableInfo represents QuestDB table information.
 type TableInfo struct {
-	Name        string
-	DesignatedTimestamp string
-	PartitionBy string
-	Columns     []ColumnInfo
+	Name                 string
+	DesignatedTimestamp  string
+	PartitionBy          string
+	Columns              []ColumnInfo
 }
 
 // ColumnInfo represents a table column.
