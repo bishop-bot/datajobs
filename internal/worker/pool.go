@@ -51,21 +51,28 @@ type DeadLetterJob struct {
 
 // Pool manages the bounded worker pool.
 type Pool struct {
-	cfg      config.WorkerConfig
-	metrics  *metrics.Metrics
-	handlers map[string]JobFunc
-	jobChan  chan Job
-	deadLetter chan DeadLetterJob
+	cfg         config.WorkerConfig
+	metrics     *metrics.Metrics
+	handlers    map[string]JobFunc
+	jobChan     chan Job
+	deadLetter  chan DeadLetterJob
 	deadLetterQ []DeadLetterJob
 	deadLetterMu sync.Mutex
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-	mu       sync.Mutex
-	running  bool
+	stopCh      chan struct{}
+	wg          sync.WaitGroup
+	stopOnce    sync.Once // Ensure channels are closed only once
+	mu          sync.Mutex
+	running     bool
 }
 
 // MaxDeadLetterSize is the maximum number of dead letter entries to keep.
 const MaxDeadLetterSize = 1000
+
+// jobState tracks queue depth accurately.
+// When a worker takes a job: decrement (job left queue)
+// When a job completes: no change (already decremented)
+// When retry is re-queued: no change (same job, already counted)
+// When job goes to DL: no change (already left queue)
 
 // NewPool creates a new worker pool with bounded concurrency.
 func NewPool(cfg config.WorkerConfig, m *metrics.Metrics) *Pool {
@@ -142,9 +149,11 @@ func (p *Pool) Submit(ctx context.Context, job Job) error {
 	}
 	p.mu.Unlock()
 
+	// Check queue depth before submitting (for metrics only, actual backpressure via channel)
+	p.metrics.SetQueueDepth(len(p.jobChan))
+
 	select {
 	case p.jobChan <- job:
-		p.metrics.SetQueueDepth(len(p.jobChan))
 		return nil
 	default:
 		// Queue is full
@@ -174,6 +183,7 @@ func (p *Pool) executeJob(job Job, attempt int) {
 	if !ok {
 		logger.Error("handler not found", "handler", job.Handler)
 		p.sendToDeadLetter(ctx, job, "handler_not_found", "handler not registered")
+		// Job left queue, queue depth is now len(p.jobChan)
 		return
 	}
 
@@ -203,9 +213,6 @@ func (p *Pool) executeJob(job Job, attempt int) {
 			logger.Info("scheduling retry", "next_attempt", nextAttempt+1, "backoff", backoff)
 			p.metrics.RecordJobRetry(ctx, job.ID)
 
-			// Update queue depth (job is leaving the queue on retry)
-			p.metrics.SetQueueDepth(len(p.jobChan))
-
 			// Sleep for backoff with context cancellation support
 			select {
 			case <-time.After(backoff):
@@ -217,6 +224,7 @@ func (p *Pool) executeJob(job Job, attempt int) {
 			}
 
 			// Re-queue the job (bounded by channel capacity)
+			// Queue depth will be len(p.jobChan) + 1 after this
 			select {
 			case p.jobChan <- job:
 				// Job re-queued successfully
@@ -237,9 +245,7 @@ func (p *Pool) executeJob(job Job, attempt int) {
 
 	p.metrics.RecordJobEnd(ctx, job.ID, "success")
 	logger.Info("job completed", "output", output)
-
-	// Update queue depth
-	p.metrics.SetQueueDepth(len(p.jobChan))
+	// Job left queue (completed), queue depth is now len(p.jobChan)
 }
 
 func (p *Pool) sendToDeadLetter(ctx context.Context, job Job, reason, errMsg string) {
@@ -309,10 +315,13 @@ func (p *Pool) Stop() {
 	p.running = false
 	p.mu.Unlock()
 
-	// Signal workers to stop by closing stopCh and jobChan
-	close(p.stopCh)
-	close(p.jobChan)  // Workers exit when jobChan closes
-	close(p.deadLetter) // Dead letter processor exits
+	// Use Once to prevent double-close panic
+	p.stopOnce.Do(func() {
+		// Signal workers to stop by closing stopCh and jobChan
+		close(p.stopCh)
+		close(p.jobChan)  // Workers exit when jobChan closes
+		close(p.deadLetter) // Dead letter processor exits
+	})
 
 	// Wait for all workers and processors to finish
 	p.wg.Wait()
