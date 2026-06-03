@@ -36,6 +36,7 @@ type Scheduler struct {
 	jobs      map[string]Job
 	mu        sync.RWMutex
 	stopCh    chan struct{}
+	stopOnce  sync.Once // Ensure channels are closed only once
 }
 
 // New creates a new scheduler.
@@ -203,7 +204,9 @@ func (s *Scheduler) Start() error {
 // Stop stops the scheduler.
 func (s *Scheduler) Stop() {
 	s.cron.Stop()
-	close(s.stopCh)
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+	})
 	logging.Info("scheduler stopped")
 }
 
