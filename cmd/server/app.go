@@ -40,6 +40,7 @@ type App struct {
 	sqliteDB  *database.DB
 	questDB   *database.QuestDB
 	ilpClient *ingestion.ILPClient
+	ibClient  *providers.IBClient
 
 	// Worker & scheduling
 	pool      *worker.Pool
@@ -77,6 +78,11 @@ func NewApp(cfg *config.Config, m *metrics.Metrics) (*App, error) {
 
 	if err := app.initDatabases(); err != nil {
 		return nil, err
+	}
+
+	if err := app.initIB(); err != nil {
+		logger.Warn("failed to init IB client", "error", err)
+		// Continue - IB is optional for server startup
 	}
 
 	app.initWorkerPool()
@@ -152,8 +158,8 @@ func (a *App) Stop() {
 	if a.ilpClient != nil {
 		a.ilpClient.Close()
 	}
-	if ibClient := providers.GetIB(); ibClient != nil {
-		ibClient.Close()
+	if a.ibClient != nil {
+		a.ibClient.Close()
 	}
 
 	// Shutdown HTTP server
@@ -243,6 +249,20 @@ func (a *App) initDatabases() error {
 	return nil
 }
 
+// initIB initializes the IB client.
+func (a *App) initIB() error {
+	if err := providers.InitIB(a.cfg.IB); err != nil {
+		return err
+	}
+	a.ibClient = providers.GetIB()
+	return nil
+}
+
+// IBClient returns the IB client.
+func (a *App) IBClient() *providers.IBClient {
+	return a.ibClient
+}
+
 // initWorkerPool initializes the worker pool and registers handlers.
 func (a *App) initWorkerPool() {
 	a.pool = worker.NewPool(a.cfg.Worker, a.metrics)
@@ -289,7 +309,7 @@ func (a *App) initHTTPServer() {
 	jobsHandler := handlers.NewJobsHandler(a.scheduler, a.pool)
 	systemHandler := handlers.NewSystemHandler(a.scheduler, a.pool)
 	questdbHandler := handlers.NewQuestDBHandler(a.questDB)
-	marketDataHandler := handlers.NewMarketDataHandler(a.pool, providers.GetIB(), a.sqliteDB, a.questDB)
+	marketDataHandler := handlers.NewMarketDataHandler(a.pool, a.ibClient, a.sqliteDB, a.questDB)
 
 	// Setup router
 	a.router = setupRouter(a.cfg, a.healthServer, a.metrics,
