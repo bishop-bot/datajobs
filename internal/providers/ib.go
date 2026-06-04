@@ -9,32 +9,24 @@ import (
 	"github.com/bishop-bot/datajobs/internal/logging"
 )
 
-// IBClient wraps the IB Web API client with singleton lifecycle.
+// IBClient wraps the IB Web API client with thread-safe lifecycle.
 type IBClient struct {
-	client   *ibapi.Client
-	cfg      config.IBConfig
-	mu       sync.RWMutex
-	closed   bool
+	client *ibapi.Client
+	cfg    config.IBConfig
+	mu     sync.RWMutex
+	closed bool
 }
 
-// Singleton instance and lock.
+// Singleton instance and lock for backward compatibility.
 var (
 	ibClient     *IBClient
 	ibClientOnce sync.Once
 	ibClientErr  error
 )
 
-// InitIB initializes the singleton IB client.
-// Safe to call multiple times; only initializes once.
-func InitIB(cfg config.IBConfig) error {
-	ibClientOnce.Do(func() {
-		ibClient, ibClientErr = newIBClient(cfg)
-	})
-	return ibClientErr
-}
-
-// newIBClient creates a new IB client instance.
-func newIBClient(cfg config.IBConfig) (*IBClient, error) {
+// NewIBClient creates a new IB client instance.
+// This is the preferred constructor for dependency injection.
+func NewIBClient(cfg config.IBConfig) (*IBClient, error) {
 	opts := []ibapi.ClientOption{
 		ibapi.WithBaseURL(cfg.BaseURL),
 		ibapi.WithInsecureSkipVerify(cfg.InsecureSkipVerify),
@@ -46,7 +38,7 @@ func newIBClient(cfg config.IBConfig) (*IBClient, error) {
 		return nil, err
 	}
 
-	logging.Info("IB client initialized",
+	logging.Info("IB client created",
 		"base_url", cfg.BaseURL,
 		"insecure", cfg.InsecureSkipVerify,
 	)
@@ -57,7 +49,18 @@ func newIBClient(cfg config.IBConfig) (*IBClient, error) {
 	}, nil
 }
 
+// InitIB initializes the singleton IB client.
+// Safe to call multiple times; only initializes once.
+// Deprecated: Use NewIBClient + direct assignment instead.
+func InitIB(cfg config.IBConfig) error {
+	ibClientOnce.Do(func() {
+		ibClient, ibClientErr = NewIBClient(cfg)
+	})
+	return ibClientErr
+}
+
 // GetIB returns the singleton IB client instance.
+// Deprecated: Use direct dependency injection instead.
 func GetIB() *IBClient {
 	return ibClient
 }
@@ -197,22 +200,6 @@ func (r HistoricalDataRequest) ToIBRequest() ibapi.HistoricalDataRequest {
 		OutsideRth: r.OutsideRth,
 		Source:     r.Source,
 	}
-}
-
-// HistoricalDataBar represents a single bar of historical data.
-type HistoricalDataBar struct {
-	// Open is the opening price
-	Open float64
-	// High is the highest price
-	High float64
-	// Low is the lowest price
-	Low float64
-	// Close is the closing price
-	Close float64
-	// Volume is the trading volume
-	Volume float64
-	// Timestamp is the bar timestamp (Unix milliseconds)
-	Timestamp int64
 }
 
 // Errors

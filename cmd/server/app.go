@@ -272,8 +272,8 @@ func (a *App) initWorkerPool() {
 		a.pool.RegisterHandler(name, handler)
 	}
 
-	// Register QuestDB handlers
-	jobs.RegisterQuestDBHandlers(a.pool, a.questDB, a.sqliteDB, a.ilpClient)
+	// Register QuestDB handlers with all dependencies
+	jobs.RegisterQuestDBHandlers(a.pool, a.questDB, a.sqliteDB, a.ilpClient, a.ibClient)
 }
 
 // initScheduler initializes the scheduler and registers jobs from config.
