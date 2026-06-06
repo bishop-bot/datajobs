@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mitchellh/mapstructure"
@@ -18,9 +19,9 @@ type Config struct {
 	QuestDB   QuestDBConfig   `yaml:"questdb"`
 	IB        IBConfig        `yaml:"ib"`
 	Jobs      []JobConfig     `yaml:"jobs"`
-	Metrics   MetricsConfig    `yaml:"metrics"`
+	Metrics   MetricsConfig   `yaml:"metrics"`
 	Tracing   TracingConfig   `yaml:"tracing"`
-	Logging   LoggingConfig    `yaml:"logging"`
+	Logging   LoggingConfig   `yaml:"logging"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -31,8 +32,8 @@ type ServerConfig struct {
 
 // WorkerConfig holds worker pool settings.
 type WorkerConfig struct {
-	PoolSize       int `yaml:"poolSize" env:"WORKER_POOL_SIZE"`
-	QueueCapacity  int `yaml:"queueCapacity" env:"WORKER_QUEUE_CAPACITY"`
+	PoolSize        int `yaml:"poolSize" env:"WORKER_POOL_SIZE"`
+	QueueCapacity   int `yaml:"queueCapacity" env:"WORKER_QUEUE_CAPACITY"`
 	ShutdownTimeout int `yaml:"shutdownTimeout" env:"WORKER_SHUTDOWN_TIMEOUT"`
 }
 
@@ -43,8 +44,8 @@ type SchedulerConfig struct {
 
 // DatabaseConfig holds SQLite settings.
 type DatabaseConfig struct {
-	Path         string `yaml:"path" env:"DATABASE_PATH"`
-	JournalMode  string `yaml:"journalMode" env:"DATABASE_JOURNAL_MODE"`
+	Path          string `yaml:"path" env:"DATABASE_PATH"`
+	JournalMode   string `yaml:"journalMode" env:"DATABASE_JOURNAL_MODE"`
 	MigrationsDir string `yaml:"migrationsDir" env:"DATABASE_MIGRATIONS_DIR"`
 }
 
@@ -61,29 +62,29 @@ type QuestDBConfig struct {
 
 // IBConfig holds Interactive Brokers Web API settings.
 type IBConfig struct {
-	BaseURL             string        `yaml:"baseURL" env:"IB_BASE_URL"`
-	InsecureSkipVerify  bool          `yaml:"insecureSkipVerify" env:"IB_INSECURE_SKIP_VERIFY"`
-	Timeout             time.Duration `yaml:"timeout" env:"IB_TIMEOUT"`
+	BaseURL           string        `yaml:"baseURL" env:"IB_BASE_URL"`
+	InsecureSkipVerify bool         `yaml:"insecureSkipVerify" env:"IB_INSECURE_SKIP_VERIFY"`
+	Timeout           time.Duration `yaml:"timeout" env:"IB_TIMEOUT"`
 }
 
 // JobConfig holds per-job configuration.
 type JobConfig struct {
-	ID          string                 `yaml:"id" env:"JOB_ID"`
-	Name        string                 `yaml:"name" env:"JOB_NAME"`
-	Cron        string                 `yaml:"cron" env:"JOB_CRON"`
-	Type        string                 `yaml:"type" env:"JOB_TYPE"`
-	Enabled     bool                   `yaml:"enabled" env:"JOB_ENABLED"`
-	Retry       RetryConfig            `yaml:"retry"`
-	Handler     string                 `yaml:"handler" env:"JOB_HANDLER"`
-	Timeout     int                    `yaml:"timeout" env:"JOB_TIMEOUT"` // seconds
-	Metadata    map[string]interface{} `yaml:"metadata"`
+	ID       string                 `yaml:"id"`
+	Name     string                 `yaml:"name"`
+	Cron     string                 `yaml:"cron" env:"JOB_CRON"`
+	Type     string                 `yaml:"type"`
+	Enabled  bool                   `yaml:"enabled" env:"JOB_ENABLED"`
+	Retry    RetryConfig            `yaml:"retry"`
+	Handler  string                 `yaml:"handler" env:"JOB_HANDLER"`
+	Timeout  int                    `yaml:"timeout" env:"JOB_TIMEOUT"` // seconds
+	Metadata map[string]interface{} `yaml:"metadata"`
 }
 
 // RetryConfig holds retry settings for a job.
 type RetryConfig struct {
-	MaxAttempts int     `yaml:"maxAttempts" env:"JOB_RETRY_MAX_ATTEMPTS"`
-	InitialDelay int    `yaml:"initialDelay" env:"JOB_RETRY_INITIAL_DELAY"` // milliseconds
-	MaxDelay     int     `yaml:"maxDelay" env:"JOB_RETRY_MAX_DELAY"`       // milliseconds
+	MaxAttempts  int     `yaml:"maxAttempts" env:"JOB_RETRY_MAX_ATTEMPTS"`
+	InitialDelay int     `yaml:"initialDelay" env:"JOB_RETRY_INITIAL_DELAY"` // milliseconds
+	MaxDelay     int     `yaml:"maxDelay" env:"JOB_RETRY_MAX_DELAY"`        // milliseconds
 	Multiplier   float64 `yaml:"multiplier" env:"JOB_RETRY_MULTIPLIER"`
 }
 
@@ -95,17 +96,17 @@ type MetricsConfig struct {
 
 // TracingConfig holds OpenTelemetry settings.
 type TracingConfig struct {
-	Enabled        bool   `yaml:"enabled" env:"TRACING_ENABLED"`
-	ServiceName    string `yaml:"serviceName" env:"TRACING_SERVICE_NAME"`
-	ExporterType   string `yaml:"exporterType" env:"TRACING_EXPORTER"` // otlp, jaeger, stdout
-	Endpoint       string `yaml:"endpoint" env:"TRACING_ENDPOINT"`
-	Insecure       bool   `yaml:"insecure" env:"TRACING_INSECURE"`
+	Enabled      bool   `yaml:"enabled" env:"TRACING_ENABLED"`
+	ServiceName  string `yaml:"serviceName" env:"TRACING_SERVICE_NAME"`
+	ExporterType string `yaml:"exporterType" env:"TRACING_EXPORTER"` // otlp, jaeger, stdout
+	Endpoint     string `yaml:"endpoint" env:"TRACING_ENDPOINT"`
+	Insecure     bool   `yaml:"insecure" env:"TRACING_INSECURE"`
 }
 
 // LoggingConfig holds structured logging settings.
 type LoggingConfig struct {
-	Level      string `yaml:"level" env:"LOG_LEVEL"`
-	Format     string `yaml:"format" env:"LOG_FORMAT"` // json, text
+	Level  string `yaml:"level" env:"LOG_LEVEL"`
+	Format string `yaml:"format" env:"LOG_FORMAT"` // json, text
 }
 
 // Load reads configuration from a YAML file with environment variable overrides.
@@ -120,248 +121,183 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
-	// Apply environment variable overrides
 	applyEnvOverrides(&cfg)
-
-	// Set defaults
 	setDefaults(&cfg)
 
 	return &cfg, nil
 }
 
-func applyEnvOverrides(cfg *Config) {
-	// Server
-	if v := os.Getenv("SERVER_HOST"); v != "" {
-		cfg.Server.Host = v
+// Helper functions for environment variable overrides
+func setString(v *string, key string) {
+	if val := os.Getenv(key); val != "" {
+		*v = val
 	}
-	if v := os.Getenv("SERVER_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			cfg.Server.Port = port
-		}
-	}
+}
 
-	// Worker
-	if v := os.Getenv("WORKER_POOL_SIZE"); v != "" {
-		if size, err := strconv.Atoi(v); err == nil {
-			cfg.Worker.PoolSize = size
-		}
-	}
-	if v := os.Getenv("WORKER_QUEUE_CAPACITY"); v != "" {
-		if cap, err := strconv.Atoi(v); err == nil {
-			cfg.Worker.QueueCapacity = cap
-		}
-	}
-	if v := os.Getenv("WORKER_SHUTDOWN_TIMEOUT"); v != "" {
-		if t, err := strconv.Atoi(v); err == nil {
-			cfg.Worker.ShutdownTimeout = t
-		}
-	}
-
-	// Scheduler
-	if v := os.Getenv("SCHEDULER_TIMEZONE"); v != "" {
-		cfg.Scheduler.Timezone = v
-	}
-
-	// Metrics
-	if v := os.Getenv("METRICS_ENABLED"); v != "" {
-		cfg.Metrics.Enabled = v == "true" || v == "1"
-	}
-	if v := os.Getenv("METRICS_PATH"); v != "" {
-		cfg.Metrics.Path = v
-	}
-
-	// Tracing
-	if v := os.Getenv("TRACING_ENABLED"); v != "" {
-		cfg.Tracing.Enabled = v == "true" || v == "1"
-	}
-	if v := os.Getenv("TRACING_SERVICE_NAME"); v != "" {
-		cfg.Tracing.ServiceName = v
-	}
-	if v := os.Getenv("TRACING_EXPORTER"); v != "" {
-		cfg.Tracing.ExporterType = v
-	}
-	if v := os.Getenv("TRACING_ENDPOINT"); v != "" {
-		cfg.Tracing.Endpoint = v
-	}
-	if v := os.Getenv("TRACING_INSECURE"); v != "" {
-		cfg.Tracing.Insecure = v == "true" || v == "1"
-	}
-
-	// Logging
-	if v := os.Getenv("LOG_LEVEL"); v != "" {
-		cfg.Logging.Level = v
-	}
-	if v := os.Getenv("LOG_FORMAT"); v != "" {
-		cfg.Logging.Format = v
-	}
-
-	// Database (SQLite)
-	if v := os.Getenv("DATABASE_PATH"); v != "" {
-		cfg.Database.Path = v
-	}
-	if v := os.Getenv("DATABASE_JOURNAL_MODE"); v != "" {
-		cfg.Database.JournalMode = v
-	}
-
-	// QuestDB
-	if v := os.Getenv("QUESTDB_HOST"); v != "" {
-		cfg.QuestDB.Host = v
-	}
-	if v := os.Getenv("QUESTDB_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			cfg.QuestDB.Port = port
-		}
-	}
-	if v := os.Getenv("QUESTDB_ILP_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			cfg.QuestDB.ILPPort = port
-		}
-	}
-	if v := os.Getenv("QUESTDB_USER"); v != "" {
-		cfg.QuestDB.User = v
-	}
-	if v := os.Getenv("QUESTDB_PASSWORD"); v != "" {
-		cfg.QuestDB.Password = v
-	}
-	if v := os.Getenv("QUESTDB_DATABASE"); v != "" {
-		cfg.QuestDB.Database = v
-	}
-	if v := os.Getenv("QUESTDB_POOL_SIZE"); v != "" {
-		if size, err := strconv.Atoi(v); err == nil {
-			cfg.QuestDB.PoolSize = size
-		}
-	}
-
-	// IB
-	if v := os.Getenv("IB_BASE_URL"); v != "" {
-		cfg.IB.BaseURL = v
-	}
-	if v := os.Getenv("IB_INSECURE_SKIP_VERIFY"); v != "" {
-		cfg.IB.InsecureSkipVerify = v == "true" || v == "1"
-	}
-	if v := os.Getenv("IB_TIMEOUT"); v != "" {
-		if t, err := strconv.Atoi(v); err == nil {
-			cfg.IB.Timeout = time.Duration(t) * time.Second
-		}
-	}
-
-	// Per-job overrides (iterates through env vars like JOB_0_ENABLED)
-	for i := range cfg.Jobs {
-		prefix := "JOB_" + strconv.Itoa(i) + "_"
-		
-		if v := os.Getenv(prefix + "ENABLED"); v != "" {
-			cfg.Jobs[i].Enabled = v == "true" || v == "1"
-		}
-		if v := os.Getenv(prefix + "CRON"); v != "" {
-			cfg.Jobs[i].Cron = v
-		}
-		if v := os.Getenv(prefix + "HANDLER"); v != "" {
-			cfg.Jobs[i].Handler = v
-		}
-		if v := os.Getenv(prefix + "TIMEOUT"); v != "" {
-			if t, err := strconv.Atoi(v); err == nil {
-				cfg.Jobs[i].Timeout = t
-			}
-		}
-		if v := os.Getenv(prefix + "RETRY_MAX_ATTEMPTS"); v != "" {
-			if a, err := strconv.Atoi(v); err == nil {
-				cfg.Jobs[i].Retry.MaxAttempts = a
-			}
+func setInt(v *int, key string) {
+	if s := os.Getenv(key); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			*v = n
 		}
 	}
 }
 
+func setBool(v *bool, key string) {
+	if s := os.Getenv(key); s != "" {
+		*v = s == "true" || s == "1"
+	}
+}
+
+func setDuration(v *time.Duration, key string) {
+	if s := os.Getenv(key); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			*v = time.Duration(n) * time.Second
+		}
+	}
+}
+
+func setFloat(v *float64, key string) {
+	if s := os.Getenv(key); s != "" {
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			*v = f
+		}
+	}
+}
+
+func applyEnvOverrides(cfg *Config) {
+	// Server
+	setString(&cfg.Server.Host, "SERVER_HOST")
+	setInt(&cfg.Server.Port, "SERVER_PORT")
+
+	// Worker
+	setInt(&cfg.Worker.PoolSize, "WORKER_POOL_SIZE")
+	setInt(&cfg.Worker.QueueCapacity, "WORKER_QUEUE_CAPACITY")
+	setInt(&cfg.Worker.ShutdownTimeout, "WORKER_SHUTDOWN_TIMEOUT")
+
+	// Scheduler
+	setString(&cfg.Scheduler.Timezone, "SCHEDULER_TIMEZONE")
+
+	// Metrics
+	setBool(&cfg.Metrics.Enabled, "METRICS_ENABLED")
+	setString(&cfg.Metrics.Path, "METRICS_PATH")
+
+	// Tracing
+	setBool(&cfg.Tracing.Enabled, "TRACING_ENABLED")
+	setString(&cfg.Tracing.ServiceName, "TRACING_SERVICE_NAME")
+	setString(&cfg.Tracing.ExporterType, "TRACING_EXPORTER")
+	setString(&cfg.Tracing.Endpoint, "TRACING_ENDPOINT")
+	setBool(&cfg.Tracing.Insecure, "TRACING_INSECURE")
+
+	// Logging
+	setString(&cfg.Logging.Level, "LOG_LEVEL")
+	setString(&cfg.Logging.Format, "LOG_FORMAT")
+
+	// Database
+	setString(&cfg.Database.Path, "DATABASE_PATH")
+	setString(&cfg.Database.JournalMode, "DATABASE_JOURNAL_MODE")
+	setString(&cfg.Database.MigrationsDir, "DATABASE_MIGRATIONS_DIR")
+
+	// QuestDB
+	setString(&cfg.QuestDB.Host, "QUESTDB_HOST")
+	setInt(&cfg.QuestDB.Port, "QUESTDB_PORT")
+	setInt(&cfg.QuestDB.ILPPort, "QUESTDB_ILP_PORT")
+	setString(&cfg.QuestDB.User, "QUESTDB_USER")
+	setString(&cfg.QuestDB.Password, "QUESTDB_PASSWORD")
+	setString(&cfg.QuestDB.Database, "QUESTDB_DATABASE")
+	setInt(&cfg.QuestDB.PoolSize, "QUESTDB_POOL_SIZE")
+
+	// IB
+	setString(&cfg.IB.BaseURL, "IB_BASE_URL")
+	setBool(&cfg.IB.InsecureSkipVerify, "IB_INSECURE_SKIP_VERIFY")
+	setDuration(&cfg.IB.Timeout, "IB_TIMEOUT")
+
+	// Per-job overrides
+	for i := range cfg.Jobs {
+		prefix := "JOB_" + strconv.Itoa(i) + "_"
+		setBool(&cfg.Jobs[i].Enabled, prefix+"ENABLED")
+		setString(&cfg.Jobs[i].Cron, prefix+"CRON")
+		setString(&cfg.Jobs[i].Handler, prefix+"HANDLER")
+		setInt(&cfg.Jobs[i].Timeout, prefix+"TIMEOUT")
+		setInt(&cfg.Jobs[i].Retry.MaxAttempts, prefix+"RETRY_MAX_ATTEMPTS")
+		setInt(&cfg.Jobs[i].Retry.InitialDelay, prefix+"RETRY_INITIAL_DELAY")
+		setInt(&cfg.Jobs[i].Retry.MaxDelay, prefix+"RETRY_MAX_DELAY")
+		setFloat(&cfg.Jobs[i].Retry.Multiplier, prefix+"RETRY_MULTIPLIER")
+	}
+}
+
 func setDefaults(cfg *Config) {
-	if cfg.Server.Host == "" {
-		cfg.Server.Host = "0.0.0.0"
-	}
-	if cfg.Server.Port == 0 {
-		cfg.Server.Port = 8080
-	}
-	if cfg.Worker.PoolSize == 0 {
-		cfg.Worker.PoolSize = 10
-	}
-	if cfg.Worker.QueueCapacity == 0 {
-		cfg.Worker.QueueCapacity = 100
-	}
-	if cfg.Worker.ShutdownTimeout == 0 {
-		cfg.Worker.ShutdownTimeout = 30
-	}
-	if cfg.Scheduler.Timezone == "" {
-		cfg.Scheduler.Timezone = "UTC"
-	}
+	// Server defaults
+	missingString(&cfg.Server.Host, "0.0.0.0")
+	zeroInt(&cfg.Server.Port, 8080)
+
+	// Worker defaults
+	zeroInt(&cfg.Worker.PoolSize, 10)
+	zeroInt(&cfg.Worker.QueueCapacity, 100)
+	zeroInt(&cfg.Worker.ShutdownTimeout, 30)
+
+	// Scheduler defaults
+	missingString(&cfg.Scheduler.Timezone, "UTC")
 
 	// Database defaults
-	if cfg.Database.Path == "" {
-		cfg.Database.Path = "datajobs.db"
-	}
-	if cfg.Database.JournalMode == "" {
-		cfg.Database.JournalMode = "WAL"
-	}
-	if cfg.Database.MigrationsDir == "" {
-		cfg.Database.MigrationsDir = "migrations"
-	}
+	missingString(&cfg.Database.Path, "datajobs.db")
+	missingString(&cfg.Database.JournalMode, "WAL")
+	missingString(&cfg.Database.MigrationsDir, "migrations")
 
 	// QuestDB defaults
-	if cfg.QuestDB.Host == "" {
-		cfg.QuestDB.Host = "localhost"
-	}
-	if cfg.QuestDB.Port == 0 {
-		cfg.QuestDB.Port = 8812 // pg-wire
-	}
-	if cfg.QuestDB.ILPPort == 0 {
-		cfg.QuestDB.ILPPort = 9009 // ILP
-	}
-	if cfg.QuestDB.User == "" {
-		cfg.QuestDB.User = "admin"
-	}
-	if cfg.QuestDB.Password == "" {
-		cfg.QuestDB.Password = "quest"
-	}
-	if cfg.QuestDB.Database == "" {
-		cfg.QuestDB.Database = "qdb"
-	}
-	if cfg.QuestDB.PoolSize == 0 {
-		cfg.QuestDB.PoolSize = 10
-	}
+	missingString(&cfg.QuestDB.Host, "localhost")
+	zeroInt(&cfg.QuestDB.Port, 8812)
+	zeroInt(&cfg.QuestDB.ILPPort, 9009)
+	missingString(&cfg.QuestDB.User, "admin")
+	missingString(&cfg.QuestDB.Password, "quest")
+	missingString(&cfg.QuestDB.Database, "qdb")
+	zeroInt(&cfg.QuestDB.PoolSize, 10)
 
 	// IB defaults
-	if cfg.IB.BaseURL == "" {
-		cfg.IB.BaseURL = "https://localhost:5001"
-	}
-	if cfg.IB.Timeout == 0 {
-		cfg.IB.Timeout = 30 * time.Second
-	}
+	missingString(&cfg.IB.BaseURL, "https://localhost:5001")
+	zeroDuration(&cfg.IB.Timeout, 30*time.Second)
 
-	if cfg.Metrics.Path == "" {
-		cfg.Metrics.Path = "/metrics"
-	}
-	if cfg.Tracing.ServiceName == "" {
-		cfg.Tracing.ServiceName = "datajobs"
-	}
-	if cfg.Logging.Level == "" {
-		cfg.Logging.Level = "info"
-	}
-	if cfg.Logging.Format == "" {
-		cfg.Logging.Format = "json"
-	}
+	// Metrics defaults
+	missingString(&cfg.Metrics.Path, "/metrics")
 
+	// Tracing defaults
+	missingString(&cfg.Tracing.ServiceName, "datajobs")
+
+	// Logging defaults
+	missingString(&cfg.Logging.Level, "info")
+	missingString(&cfg.Logging.Format, "json")
+
+	// Job defaults
 	for i := range cfg.Jobs {
-		if cfg.Jobs[i].Timeout == 0 {
-			cfg.Jobs[i].Timeout = 300 // 5 minutes default
-		}
-		if cfg.Jobs[i].Retry.MaxAttempts == 0 {
-			cfg.Jobs[i].Retry.MaxAttempts = 3
-		}
-		if cfg.Jobs[i].Retry.InitialDelay == 0 {
-			cfg.Jobs[i].Retry.InitialDelay = 1000 // 1 second
-		}
-		if cfg.Jobs[i].Retry.MaxDelay == 0 {
-			cfg.Jobs[i].Retry.MaxDelay = 60000 // 1 minute
-		}
-		if cfg.Jobs[i].Retry.Multiplier == 0 {
-			cfg.Jobs[i].Retry.Multiplier = 2.0
-		}
+		zeroInt(&cfg.Jobs[i].Timeout, 300)
+		zeroInt(&cfg.Jobs[i].Retry.MaxAttempts, 3)
+		zeroInt(&cfg.Jobs[i].Retry.InitialDelay, 1000)
+		zeroInt(&cfg.Jobs[i].Retry.MaxDelay, 60000)
+		zeroFloat(&cfg.Jobs[i].Retry.Multiplier, 2.0)
+	}
+}
+
+// Defaults helpers
+func missingString(v *string, defaultVal string) {
+	if *v == "" {
+		*v = defaultVal
+	}
+}
+
+func zeroInt(v *int, defaultVal int) {
+	if *v == 0 {
+		*v = defaultVal
+	}
+}
+
+func zeroDuration(v *time.Duration, defaultVal time.Duration) {
+	if *v == 0 {
+		*v = defaultVal
+	}
+}
+
+func zeroFloat(v *float64, defaultVal float64) {
+	if *v == 0 {
+		*v = defaultVal
 	}
 }
 
@@ -375,4 +311,55 @@ func MergeJobConfig(base *JobConfig, overrides map[string]interface{}) error {
 		return err
 	}
 	return dec.Decode(overrides)
+}
+
+// GetEnv returns environment variable or default value.
+func GetEnv(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
+}
+
+// GetEnvInt returns environment variable as int or default value.
+func GetEnvInt(key string, defaultVal int) int {
+	if s := os.Getenv(key); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			return n
+		}
+	}
+	return defaultVal
+}
+
+// GetEnvBool returns environment variable as bool or default value.
+func GetEnvBool(key string, defaultVal bool) bool {
+	if s := os.Getenv(key); s != "" {
+		return s == "true" || s == "1"
+	}
+	return defaultVal
+}
+
+// GetEnvDuration returns environment variable as duration (seconds) or default value.
+func GetEnvDuration(key string, defaultVal time.Duration) time.Duration {
+	if s := os.Getenv(key); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return defaultVal
+}
+
+// PrefixEnv returns all environment variables with a given prefix as a map.
+func PrefixEnv(prefix string) map[string]string {
+	result := make(map[string]string)
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, prefix) {
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimPrefix(parts[0], prefix)
+				result[key] = parts[1]
+			}
+		}
+	}
+	return result
 }

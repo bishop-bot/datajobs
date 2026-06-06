@@ -8,7 +8,8 @@ import (
 	jobingestion "github.com/bishop-bot/datajobs/internal/jobs/ingestion"
 	jobquestdb "github.com/bishop-bot/datajobs/internal/jobs/questdb"
 	"github.com/bishop-bot/datajobs/internal/jobs/system"
-	"github.com/bishop-bot/datajobs/internal/jobs/providers"
+	ibproviders "github.com/bishop-bot/datajobs/internal/jobs/providers"
+	"github.com/bishop-bot/datajobs/internal/providers"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 
@@ -41,6 +42,7 @@ func (r *Registry) Get(name string) (worker.JobFunc, bool) {
 }
 
 // BuiltInHandlers returns the built-in handlers with default implementations.
+// Note: ib_ping requires IB provider and is registered separately in RegisterQuestDBHandlers.
 func BuiltInHandlers() map[string]worker.JobFunc {
 	return map[string]worker.JobFunc{
 		"noop":                system.NoopHandler,
@@ -48,12 +50,11 @@ func BuiltInHandlers() map[string]worker.JobFunc {
 		"incremental_update":  jobingestion.IncrementalUpdateHandler,
 		"questdb_maintenance": jobquestdb.MaintenanceHandler,
 		"sqlite_to_questdb":   jobingestion.SQLiteToQuestDBHandler,
-		"ib_ping":             providers.PingHandler,
 	}
 }
 
 // RegisterQuestDBHandlers registers QuestDB-specific handlers.
-func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqliteDB *database.DB, ilp *ingestion.ILPClient) {
+func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqliteDB *database.DB, ilp *ingestion.ILPClient, ibProvider providers.IBProvider) {
 	// Register bulk ingest with ILP
 	pool.RegisterHandler("bulk_ingest", func(ctx context.Context, job worker.Job) (string, error) {
 		return jobingestion.BulkIngestWithILP(ctx, job, ilp)
@@ -70,8 +71,13 @@ func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqlit
 	// Register SQLite to QuestDB sync
 	pool.RegisterHandler("sqlite_to_questdb", jobingestion.SQLiteToQuestDBHandler)
 
-	// Register historical data handler
+	// Register IB ping handler if provider is available
+	if ibProvider != nil {
+		pool.RegisterHandler("ib_ping", ibproviders.PingHandler(ibProvider))
+	}
+
+	// Register historical data handler with IB provider
 	if questDB != nil && sqliteDB != nil {
-		pool.RegisterHandler("historical_data", providers.HistoricalDataHandlerWithDB(questDB, sqliteDB))
+		pool.RegisterHandler("historical_data", ibproviders.HistoricalDataHandlerWithDB(questDB, sqliteDB, ibProvider))
 	}
 }

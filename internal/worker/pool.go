@@ -24,6 +24,8 @@ type Job struct {
 	Metadata map[string]interface{}
 	Retry    config.RetryConfig
 	Timeout  time.Duration
+	Ctx      context.Context // Carries parent context for tracing
+	Attempt  int              // Current attempt number (0-based), persisted across retries
 }
 
 // JobResult represents the result of a job execution.
@@ -63,6 +65,7 @@ type Pool struct {
 	stopOnce    sync.Once // Ensure channels are closed only once
 	mu          sync.Mutex
 	running     bool
+	handlersMu  sync.RWMutex // Protects handlers map
 }
 
 // MaxDeadLetterSize is the maximum number of dead letter entries to keep.
@@ -127,13 +130,16 @@ func (p *Pool) worker() {
 			if !ok {
 				return // Channel closed, exit
 			}
-			p.executeJob(job, 0)
+			p.executeJob(job, job.Attempt)
 		}
 	}
 }
 
 // RegisterHandler registers a job handler.
+// Thread-safe: uses dedicated mutex for handlers map.
 func (p *Pool) RegisterHandler(name string, handler JobFunc) {
+	p.handlersMu.Lock()
+	defer p.handlersMu.Unlock()
 	p.handlers[name] = handler
 }
 
@@ -149,8 +155,19 @@ func (p *Pool) Submit(ctx context.Context, job Job) error {
 	}
 	p.mu.Unlock()
 
+	// Propagate context for tracing through the channel
+	job.Ctx = ctx
+
 	// Check queue depth before submitting (for metrics only, actual backpressure via channel)
 	p.metrics.SetQueueDepth(len(p.jobChan))
+
+	// Use recover to handle race between running check and channel send
+	defer func() {
+		if r := recover(); r != nil {
+			p.metrics.RecordQueueFull(ctx)
+			logger.Error("job rejected: pool stopped", "job_id", job.ID)
+		}
+	}()
 
 	select {
 	case p.jobChan <- job:
@@ -165,21 +182,32 @@ func (p *Pool) Submit(ctx context.Context, job Job) error {
 
 // executeJob processes a single job with retry support.
 func (p *Pool) executeJob(job Job, attempt int) {
-	// Get fresh context with tracing
-	ctx, span := tracing.Tracer().Start(context.Background(), "job.execute",
+	// Use parent context from job if available, otherwise create new root span
+	parentCtx := job.Ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+
+	// Use job.Attempt for span attributes (persists across retries)
+	attemptNum := job.Attempt
+
+	ctx, span := tracing.Tracer().Start(parentCtx, "job.execute",
 		trace.WithAttributes(
 			attribute.String("job.id", job.ID),
 			attribute.String("job.type", job.Type),
 			attribute.String("job.handler", job.Handler),
-			attribute.Int("job.attempt", attempt+1),
+			attribute.Int("job.attempt", attemptNum+1),
 		),
 	)
 	defer span.End()
 
-	logger := logging.FromContext(ctx).With("job_id", job.ID, "attempt", attempt+1)
+	logger := logging.FromContext(ctx).With("job_id", job.ID, "attempt", attemptNum+1)
 
-	// Get handler
+	// Get handler (thread-safe read)
+	p.handlersMu.RLock()
 	handler, ok := p.handlers[job.Handler]
+	p.handlersMu.RUnlock()
+
 	if !ok {
 		logger.Error("handler not found", "handler", job.Handler)
 		p.sendToDeadLetter(ctx, job, "handler_not_found", "handler not registered")
@@ -205,26 +233,49 @@ func (p *Pool) executeJob(job Job, attempt int) {
 		p.metrics.RecordJobEnd(ctx, job.ID, "failure")
 		logger.Error("job failed", "error", err.Error(), "output", output)
 
-		// Check if we should retry
-		if attempt < job.Retry.MaxAttempts-1 {
-			nextAttempt := attempt + 1
-			backoff := calculateBackoff(job.Retry, attempt)
+		// Check if we should retry (use job.Attempt which persists across retries)
+		if job.Attempt < job.Retry.MaxAttempts-1 {
+			backoff := calculateBackoff(job.Retry, job.Attempt)
 
-			logger.Info("scheduling retry", "next_attempt", nextAttempt+1, "backoff", backoff)
+			logger.Info("scheduling retry", "next_attempt", job.Attempt+2, "backoff", backoff)
 			p.metrics.RecordJobRetry(ctx, job.ID)
 
-			// Sleep for backoff with context cancellation support
+			// Sleep for backoff using timer for proper cleanup
+			// Check parent context (not span context) for cancellation
+			timer := time.NewTimer(backoff)
 			select {
-			case <-time.After(backoff):
+			case <-timer.C:
 				// Backoff complete, proceed to re-queue
-			case <-ctx.Done():
-				logger.Warn("retry cancelled due to context", "job_id", job.ID)
-				p.sendToDeadLetter(ctx, job, "context_cancelled", ctx.Err().Error())
+			case <-parentCtx.Done():
+				timer.Stop()
+				logger.Warn("retry cancelled due to parent context", "job_id", job.ID)
+				p.sendToDeadLetter(ctx, job, "parent_context_cancelled", parentCtx.Err().Error())
 				return
 			}
 
+			// Increment attempt before re-queuing so worker sees updated value
+			job.Attempt++
+
 			// Re-queue the job (bounded by channel capacity)
-			// Queue depth will be len(p.jobChan) + 1 after this
+			// Propagate current context through channel for span continuity
+			job.Ctx = ctx
+
+			// Use non-blocking send with recover to handle race between isRunning check and send
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Warn("recovered from panic during retry enqueue, sending to dead letter",
+						"job_id", job.ID, "panic", r)
+					p.sendToDeadLetter(ctx, job, "pool_stopped_panic", fmt.Sprintf("%v", r))
+				}
+			}()
+
+			if !p.isRunning() {
+				logger.Warn("pool stopped during retry, sending to dead letter")
+				p.sendToDeadLetter(ctx, job, "pool_stopped", "pool stopped during retry backoff")
+				return
+			}
+
+			// Attempt non-blocking send - will hit default if queue is full
 			select {
 			case p.jobChan <- job:
 				// Job re-queued successfully
@@ -258,9 +309,10 @@ func (p *Pool) sendToDeadLetter(ctx context.Context, job Job, reason, errMsg str
 	}
 
 	p.deadLetterMu.Lock()
-	if len(p.deadLetterQ) >= MaxDeadLetterSize {
-		// Drop oldest entry to make room
-		p.deadLetterQ = p.deadLetterQ[1:]
+	if len(p.deadLetterQ) > MaxDeadLetterSize {
+		// Trim to max when exceeding
+		keep := MaxDeadLetterSize / 2
+		p.deadLetterQ = p.deadLetterQ[len(p.deadLetterQ)-keep:]
 	}
 	p.deadLetterQ = append(p.deadLetterQ, dl)
 	p.deadLetterMu.Unlock()
@@ -269,7 +321,7 @@ func (p *Pool) sendToDeadLetter(ctx context.Context, job Job, reason, errMsg str
 	case p.deadLetter <- dl:
 		p.metrics.RecordDeadLetter(ctx, job.ID, reason)
 	default:
-		// Channel full, already stored in slice
+		// Channel full or closed, already stored in slice
 	}
 }
 
@@ -286,19 +338,20 @@ func (p *Pool) processDeadLetter() {
 			}
 			// Trim dead letter queue if it exceeds max size
 			p.deadLetterMu.Lock()
-			if len(p.deadLetterQ) >= MaxDeadLetterSize {
-				// Remove oldest entries (keep only half)
+			if len(p.deadLetterQ) > MaxDeadLetterSize {
+				// Keep only half when exceeding max
 				keep := MaxDeadLetterSize / 2
 				p.deadLetterQ = p.deadLetterQ[len(p.deadLetterQ)-keep:]
 			}
 			p.deadLetterQ = append(p.deadLetterQ, dl)
+			currentSize := len(p.deadLetterQ)
 			p.deadLetterMu.Unlock()
 
 			logging.Info("job sent to dead letter",
 				"job_id", dl.Job.ID,
 				"reason", dl.Reason,
 				"error", dl.Error,
-				"dlq_size", len(p.deadLetterQ),
+				"dlq_size", currentSize,
 			)
 		}
 	}
@@ -347,6 +400,13 @@ func (p *Pool) GetDeadLetterCount() int {
 // GetQueueDepth returns the current number of jobs in the queue.
 func (p *Pool) GetQueueDepth() int {
 	return len(p.jobChan)
+}
+
+// isRunning checks if the pool is still accepting jobs.
+func (p *Pool) isRunning() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.running
 }
 
 // GetActiveWorkers returns the number of active workers.

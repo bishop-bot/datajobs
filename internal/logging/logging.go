@@ -11,14 +11,24 @@ import (
 type contextKey string
 
 const (
-	LoggerKey      contextKey = "logger"
-	RequestIDKey   contextKey = "request_id"
+	LoggerKey    contextKey = "logger"
+	RequestIDKey contextKey = "request_id"
 )
 
 var (
 	defaultLogger *slog.Logger
 	initOnce      sync.Once
 )
+
+// init initializes the default logger at package load time.
+func init() {
+	initOnce.Do(func() {
+		defaultLogger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		}))
+		slog.SetDefault(defaultLogger)
+	})
+}
 
 // Config holds logging configuration.
 type Config struct {
@@ -27,6 +37,7 @@ type Config struct {
 }
 
 // Init initializes the global logger based on config.
+// Only runs once; subsequent calls are no-ops.
 func Init(cfg Config) {
 	initOnce.Do(func() {
 		var level slog.Level
@@ -57,22 +68,8 @@ func Init(cfg Config) {
 	})
 }
 
-// initDefault initializes a default logger if not already initialized.
-func initDefault() {
-	initOnce.Do(func() {
-		defaultLogger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
-		}))
-		slog.SetDefault(defaultLogger)
-	})
-}
-
 // FromContext returns the logger from context, or the default logger.
 func FromContext(ctx context.Context) *slog.Logger {
-	// Initialize default if not set
-	if defaultLogger == nil {
-		initDefault()
-	}
 	if logger, ok := ctx.Value(LoggerKey).(*slog.Logger); ok && logger != nil {
 		return logger
 	}
@@ -86,14 +83,12 @@ func WithContext(ctx context.Context, logger *slog.Logger) context.Context {
 
 // WithRequestID returns a new logger with the request ID as an attribute.
 func WithRequestID(ctx context.Context, requestID string) *slog.Logger {
-	logger := FromContext(ctx)
-	return logger.With(slog.String("request_id", requestID))
+	return FromContext(ctx).With(slog.String("request_id", requestID))
 }
 
 // WithJobID returns a new logger with the job ID as an attribute.
 func WithJobID(ctx context.Context, jobID string) *slog.Logger {
-	logger := FromContext(ctx)
-	return logger.With(slog.String("job_id", jobID))
+	return FromContext(ctx).With(slog.String("job_id", jobID))
 }
 
 // WithCorrelationID is an alias for WithRequestID for compatibility.

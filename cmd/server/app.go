@@ -40,6 +40,7 @@ type App struct {
 	sqliteDB  *database.DB
 	questDB   *database.QuestDB
 	ilpClient *ingestion.ILPClient
+	ibClient  *providers.IBClient
 
 	// Worker & scheduling
 	pool      *worker.Pool
@@ -77,6 +78,11 @@ func NewApp(cfg *config.Config, m *metrics.Metrics) (*App, error) {
 
 	if err := app.initDatabases(); err != nil {
 		return nil, err
+	}
+
+	if err := app.initIB(); err != nil {
+		logger.Warn("failed to init IB client", "error", err)
+		// Continue - IB is optional for server startup
 	}
 
 	app.initWorkerPool()
@@ -152,8 +158,8 @@ func (a *App) Stop() {
 	if a.ilpClient != nil {
 		a.ilpClient.Close()
 	}
-	if ibClient := providers.GetIB(); ibClient != nil {
-		ibClient.Close()
+	if a.ibClient != nil {
+		a.ibClient.Close()
 	}
 
 	// Shutdown HTTP server
@@ -237,10 +243,24 @@ func (a *App) initDatabases() error {
 	// Initialize ILP client
 	if a.questDB != nil {
 		a.ilpClient = ingestion.NewILPClient(a.cfg.QuestDB, a.metrics)
-		ingestion.InitILP(a.cfg.QuestDB, a.metrics)
 	}
 
 	return nil
+}
+
+// initIB initializes the IB client.
+func (a *App) initIB() error {
+	ibClient, err := providers.NewIBClient(a.cfg.IB)
+	if err != nil {
+		return err
+	}
+	a.ibClient = ibClient
+	return nil
+}
+
+// IBClient returns the IB client.
+func (a *App) IBClient() *providers.IBClient {
+	return a.ibClient
 }
 
 // initWorkerPool initializes the worker pool and registers handlers.
@@ -252,8 +272,8 @@ func (a *App) initWorkerPool() {
 		a.pool.RegisterHandler(name, handler)
 	}
 
-	// Register QuestDB handlers
-	jobs.RegisterQuestDBHandlers(a.pool, a.questDB, a.sqliteDB, a.ilpClient)
+	// Register QuestDB handlers with all dependencies
+	jobs.RegisterQuestDBHandlers(a.pool, a.questDB, a.sqliteDB, a.ilpClient, a.ibClient)
 }
 
 // initScheduler initializes the scheduler and registers jobs from config.
@@ -289,7 +309,7 @@ func (a *App) initHTTPServer() {
 	jobsHandler := handlers.NewJobsHandler(a.scheduler, a.pool)
 	systemHandler := handlers.NewSystemHandler(a.scheduler, a.pool)
 	questdbHandler := handlers.NewQuestDBHandler(a.questDB)
-	marketDataHandler := handlers.NewMarketDataHandler(a.pool, providers.GetIB(), a.sqliteDB, a.questDB)
+	marketDataHandler := handlers.NewMarketDataHandler(a.pool, a.ibClient, a.sqliteDB, a.questDB)
 
 	// Setup router
 	a.router = setupRouter(a.cfg, a.healthServer, a.metrics,

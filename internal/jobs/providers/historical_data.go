@@ -27,20 +27,20 @@ const (
 )
 
 // HistoricalDataHandlerWithDB creates a handler with QuestDB and SQLite access.
-func HistoricalDataHandlerWithDB(questDB *database.QuestDB, sqliteDB *database.DB) worker.JobFunc {
+// The ibProvider parameter accepts either *IBClient or a mock implementation for testing.
+func HistoricalDataHandlerWithDB(questDB *database.QuestDB, sqliteDB *database.DB, ibProvider providers.IBProvider) worker.JobFunc {
 	return func(ctx context.Context, job worker.Job) (string, error) {
-		return historicalDataHandlerImpl(ctx, job, questDB, sqliteDB)
+		return historicalDataHandlerImpl(ctx, job, questDB, sqliteDB, ibProvider)
 	}
 }
 
 // historicalDataHandlerImpl is the main implementation.
-func historicalDataHandlerImpl(ctx context.Context, job worker.Job, questDB *database.QuestDB, sqliteDB *database.DB) (string, error) {
+func historicalDataHandlerImpl(ctx context.Context, job worker.Job, questDB *database.QuestDB, sqliteDB *database.DB, ibProvider providers.IBProvider) (string, error) {
 	logger := logging.FromContext(ctx).With("job_id", job.ID)
 
-	// Get IB client
-	ibClient := providers.GetIB()
-	if ibClient == nil {
-		return "", fmt.Errorf("IB client not initialized")
+	// Validate IB provider
+	if ibProvider == nil {
+		return "", fmt.Errorf("IB provider not available")
 	}
 
 	// Validate QuestDB connection
@@ -73,7 +73,7 @@ func historicalDataHandlerImpl(ctx context.Context, job worker.Job, questDB *dat
 	var failedSymbols []string
 
 	for _, instr := range instruments {
-		bars, err := fetchInstrumentOHLCV(ctx, ibClient, instr, params)
+		bars, err := fetchInstrumentOHLCV(ctx, ibProvider, instr, params)
 		if err != nil {
 			logger.Error("failed to fetch data", "symbol", instr.Symbol, "error", err)
 			failedSymbols = append(failedSymbols, instr.Symbol)
@@ -190,10 +190,13 @@ func getAllInstruments(ctx context.Context, sqliteDB *database.DB) ([]instrument
 // scanInstruments scans rows into instrument slice.
 func scanInstruments(rows *sql.Rows) ([]instrument, error) {
 	var instruments []instrument
+	var scanErrors int
 	for rows.Next() {
 		var i instrument
 		var securityType sql.NullString
 		if err := rows.Scan(&i.Conid, &i.Symbol, &i.Exchange, &securityType); err != nil {
+			scanErrors++
+			logging.Warn("failed to scan instrument row", "error", err)
 			continue
 		}
 		if securityType.Valid {
@@ -201,11 +204,14 @@ func scanInstruments(rows *sql.Rows) ([]instrument, error) {
 		}
 		instruments = append(instruments, i)
 	}
+	if scanErrors > 0 {
+		logging.Warn("dropped rows due to scan errors", "count", scanErrors)
+	}
 	return instruments, rows.Err()
 }
 
 // fetchInstrumentOHLCV fetches OHLCV data for a single instrument.
-func fetchInstrumentOHLCV(ctx context.Context, ibClient *providers.IBClient, instr instrument, params historicalParams) ([]database.OHLCVBar, error) {
+func fetchInstrumentOHLCV(ctx context.Context, ibProvider providers.IBProvider, instr instrument, params historicalParams) ([]database.OHLCVBar, error) {
 	logger := logging.FromContext(ctx)
 
 	// Determine exchange - default to SMART
@@ -224,7 +230,7 @@ func fetchInstrumentOHLCV(ctx context.Context, ibClient *providers.IBClient, ins
 	}
 
 	// Fetch data
-	resp, err := ibClient.HistoricalData(ctx, req)
+	resp, err := ibProvider.HistoricalData(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("historical data request failed: %w", err)
 	}

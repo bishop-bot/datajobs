@@ -16,6 +16,30 @@ import (
 	cron "github.com/netresearch/go-cron"
 )
 
+const (
+	defaultRetryMaxAttempts  = 3
+	defaultRetryInitialDelay = 1000  // milliseconds
+	defaultRetryMaxDelay    = 60000 // milliseconds (1 minute)
+	defaultRetryMultiplier  = 2.0
+)
+
+// sanitizeRetryConfig ensures the retry config has sensible defaults.
+func sanitizeRetryConfig(cfg config.RetryConfig) config.RetryConfig {
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = defaultRetryMaxAttempts
+	}
+	if cfg.InitialDelay <= 0 {
+		cfg.InitialDelay = defaultRetryInitialDelay
+	}
+	if cfg.MaxDelay <= 0 {
+		cfg.MaxDelay = defaultRetryMaxDelay
+	}
+	if cfg.Multiplier <= 0 {
+		cfg.Multiplier = defaultRetryMultiplier
+	}
+	return cfg
+}
+
 // Job represents a schedulable job.
 type Job struct {
 	ID      string
@@ -133,13 +157,8 @@ func (s *Scheduler) executeJob(ctx context.Context, job Job) {
 		Type:     job.Type,
 		Handler:  job.Handler,
 		Metadata: make(map[string]interface{}),
-		Retry:    config.RetryConfig{MaxAttempts: 3},
+		Retry:    sanitizeRetryConfig(job.Retry),
 		Timeout:  job.Timeout,
-	}
-
-	// Use job config's retry settings if available (not zero values)
-	if job.Retry.MaxAttempts > 0 {
-		wjob.Retry = job.Retry
 	}
 
 	if err := s.pool.Submit(ctx, wjob); err != nil {

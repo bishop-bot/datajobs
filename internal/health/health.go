@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/bishop-bot/datajobs/internal/logging"
 )
 
 // Status represents the health status.
@@ -87,7 +89,12 @@ func (s *Server) ReadinessHandler(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusServiceUnavailable
 	}
 
-	data, _ := json.Marshal(state)
+	data, err := json.Marshal(state)
+	if err != nil {
+		logging.Warn("failed to marshal health state", "error", err)
+		http.Error(w, `{"status":"unhealthy","error":"failed to marshal state"}`, http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(status)
 	w.Write(data)
 }
@@ -95,7 +102,12 @@ func (s *Server) ReadinessHandler(w http.ResponseWriter, r *http.Request) {
 // StatusHandler returns the full health status.
 func (s *Server) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	data, _ := json.Marshal(s.getState())
+	data, err := json.Marshal(s.getState())
+	if err != nil {
+		logging.Warn("failed to marshal health state", "error", err)
+		http.Error(w, `{"status":"unhealthy","error":"failed to marshal state"}`, http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
 }

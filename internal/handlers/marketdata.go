@@ -29,19 +29,20 @@ type Instrument struct {
 
 // MarketDataHandler handles market data endpoints.
 type MarketDataHandler struct {
-	pool     *worker.Pool
-	ibClient *providers.IBClient
-	sqliteDB *database.DB
-	questdb  *database.QuestDB
+	pool      *worker.Pool
+	ibProvider providers.IBProvider
+	sqliteDB  *database.DB
+	questdb   *database.QuestDB
 }
 
 // NewMarketDataHandler creates a new market data handler.
-func NewMarketDataHandler(pool *worker.Pool, ibClient *providers.IBClient, sqliteDB *database.DB, questdb *database.QuestDB) *MarketDataHandler {
+// The ibProvider parameter accepts either *IBClient or a mock implementation.
+func NewMarketDataHandler(pool *worker.Pool, ibProvider providers.IBProvider, sqliteDB *database.DB, questdb *database.QuestDB) *MarketDataHandler {
 	return &MarketDataHandler{
-		pool:     pool,
-		ibClient: ibClient,
-		sqliteDB: sqliteDB,
-		questdb:  questdb,
+		pool:      pool,
+		ibProvider: ibProvider,
+		sqliteDB:  sqliteDB,
+		questdb:   questdb,
 	}
 }
 
@@ -65,8 +66,8 @@ func (h *MarketDataHandler) DownloadHistoricalData(
 		return nil, fmt.Errorf("conid or symbol is required")
 	}
 
-	if h.ibClient == nil {
-		return nil, fmt.Errorf("IB client not available")
+	if h.ibProvider == nil {
+		return nil, fmt.Errorf("IB provider not available")
 	}
 
 	if h.questdb == nil {
@@ -105,7 +106,7 @@ func (h *MarketDataHandler) DownloadHistoricalData(
 		OutsideRth: outsideRth,
 	}
 
-	ibData, err := h.ibClient.HistoricalData(ctx, req)
+	ibData, err := h.ibProvider.HistoricalData(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch historical data from IB: %w", err)
 	}
@@ -193,10 +194,10 @@ func (h *MarketDataHandler) lookupConidAndExchange(ctx context.Context, symbol, 
 
 
 func (h *MarketDataHandler) GetHistoricalData(w http.ResponseWriter, r *http.Request) {
-	if h.ibClient == nil {
+	if h.ibProvider == nil {
 		respondJSON(w, http.StatusServiceUnavailable, Response{
 			Success: false,
-			Error:   "IB client not available",
+			Error:   "IB provider not available",
 		})
 		return
 	}
@@ -233,7 +234,7 @@ func (h *MarketDataHandler) GetHistoricalData(w http.ResponseWriter, r *http.Req
 		OutsideRth: outsideRth,
 	}
 
-	data, err := h.ibClient.HistoricalData(r.Context(), req)
+	data, err := h.ibProvider.HistoricalData(r.Context(), req)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, Response{
 			Success: false,

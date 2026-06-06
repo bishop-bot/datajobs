@@ -10,11 +10,9 @@ import (
 )
 
 // BulkIngestHandler handles bulk data ingestion jobs via ILP.
+// Deprecated: Use BulkIngestWithILP with explicit ILP client instead.
 func BulkIngestHandler(ctx context.Context, job worker.Job) (string, error) {
-	if ingestion.DefaultILPClient == nil {
-		return "", fmt.Errorf("ILP client not initialized")
-	}
-	return BulkIngestWithILP(ctx, job, ingestion.DefaultILPClient)
+	return "", fmt.Errorf("BulkIngestHandler requires explicit ILP client: use BulkIngestWithILP")
 }
 
 // BulkIngestWithILP performs bulk ingestion using the provided ILP client.
