@@ -229,6 +229,105 @@ func TestDeadLetterQueue(t *testing.T) {
 	}
 }
 
+func TestPoolRetryWithMaxAttempts(t *testing.T) {
+	// Test that jobs respect MaxAttempts and go to DLQ after exhausting retries
+	cfg := config.WorkerConfig{
+		PoolSize:        1,
+		QueueCapacity:   10,
+		ShutdownTimeout: 30,
+	}
+	m := getMetrics()
+	pool := NewPool(cfg, m)
+	defer pool.Stop()
+
+	failCount := 0
+	var lastJob Job
+
+	pool.RegisterHandler("retry-fail", func(ctx context.Context, job Job) (string, error) {
+		failCount++
+		lastJob = job
+		return "", &testError{"retry test failure"}
+	})
+
+	job := Job{
+		ID:      "retry-test",
+		Handler: "retry-fail",
+		Retry:   config.RetryConfig{MaxAttempts: 3, InitialDelay: 50, Multiplier: 1, MaxDelay: 100},
+		Timeout: 5 * time.Second,
+	}
+
+	pool.Submit(context.Background(), job)
+
+	// Wait for all retries to complete (3 attempts with 50ms backoff each = ~200ms)
+	time.Sleep(500 * time.Millisecond)
+
+	// Should have tried exactly 3 times
+	if failCount != 3 {
+		t.Errorf("expected 3 attempts, got %d", failCount)
+	}
+
+	// Last job should have Attempt = 2 (0-based, after 3 attempts)
+	if lastJob.Attempt != 2 {
+		t.Errorf("expected last attempt 2, got %d", lastJob.Attempt)
+	}
+
+	// Should be in DLQ
+	dlCount := pool.GetDeadLetterCount()
+	if dlCount < 1 {
+		t.Errorf("expected job in DLQ after max retries, got %d", dlCount)
+	}
+}
+
+func TestPoolRetryBackoff(t *testing.T) {
+	// Test that backoff is respected between retries
+	cfg := config.WorkerConfig{
+		PoolSize:        1,
+		QueueCapacity:   10,
+		ShutdownTimeout: 30,
+	}
+	m := getMetrics()
+	pool := NewPool(cfg, m)
+	defer pool.Stop()
+
+	var attemptTimes []time.Time
+
+	pool.RegisterHandler("backoff-fail", func(ctx context.Context, job Job) (string, error) {
+		attemptTimes = append(attemptTimes, time.Now())
+		return "", &testError{"backoff test failure"}
+	})
+
+	job := Job{
+		ID:      "backoff-test",
+		Handler: "backoff-fail",
+		Retry:   config.RetryConfig{MaxAttempts: 3, InitialDelay: 100, Multiplier: 2, MaxDelay: 500},
+		Timeout: 5 * time.Second,
+	}
+
+	pool.Submit(context.Background(), job)
+
+	// Wait for all retries to complete
+	time.Sleep(800 * time.Millisecond)
+
+	if len(attemptTimes) != 3 {
+		t.Fatalf("expected 3 attempts, got %d", len(attemptTimes))
+	}
+
+	// Check backoff intervals: ~100ms, ~200ms, then done
+	if len(attemptTimes) >= 2 {
+		interval1 := attemptTimes[1].Sub(attemptTimes[0])
+		if interval1 < 80*time.Millisecond { // Allow some tolerance
+			t.Errorf("first retry interval too short: %v (expected ~100ms)", interval1)
+		}
+	}
+
+	if len(attemptTimes) >= 3 {
+		interval2 := attemptTimes[2].Sub(attemptTimes[1])
+		if interval2 < 150*time.Millisecond { // Allow some tolerance
+			t.Errorf("second retry interval too short: %v (expected ~200ms)", interval2)
+		}
+	}
+}
+
 type testError struct {
 	msg string
 }

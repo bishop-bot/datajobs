@@ -25,6 +25,7 @@ type Job struct {
 	Retry    config.RetryConfig
 	Timeout  time.Duration
 	Ctx      context.Context // Carries parent context for tracing
+	Attempt  int              // Current attempt number (0-based), persisted across retries
 }
 
 // JobResult represents the result of a job execution.
@@ -129,7 +130,7 @@ func (p *Pool) worker() {
 			if !ok {
 				return // Channel closed, exit
 			}
-			p.executeJob(job, 0)
+			p.executeJob(job, job.Attempt)
 		}
 	}
 }
@@ -187,17 +188,20 @@ func (p *Pool) executeJob(job Job, attempt int) {
 		parentCtx = context.Background()
 	}
 
+	// Use job.Attempt for span attributes (persists across retries)
+	attemptNum := job.Attempt
+
 	ctx, span := tracing.Tracer().Start(parentCtx, "job.execute",
 		trace.WithAttributes(
 			attribute.String("job.id", job.ID),
 			attribute.String("job.type", job.Type),
 			attribute.String("job.handler", job.Handler),
-			attribute.Int("job.attempt", attempt+1),
+			attribute.Int("job.attempt", attemptNum+1),
 		),
 	)
 	defer span.End()
 
-	logger := logging.FromContext(ctx).With("job_id", job.ID, "attempt", attempt+1)
+	logger := logging.FromContext(ctx).With("job_id", job.ID, "attempt", attemptNum+1)
 
 	// Get handler (thread-safe read)
 	p.handlersMu.RLock()
@@ -229,11 +233,11 @@ func (p *Pool) executeJob(job Job, attempt int) {
 		p.metrics.RecordJobEnd(ctx, job.ID, "failure")
 		logger.Error("job failed", "error", err.Error(), "output", output)
 
-		// Check if we should retry
-		if attempt < job.Retry.MaxAttempts-1 {
-			backoff := calculateBackoff(job.Retry, attempt)
+		// Check if we should retry (use job.Attempt which persists across retries)
+		if job.Attempt < job.Retry.MaxAttempts-1 {
+			backoff := calculateBackoff(job.Retry, job.Attempt)
 
-			logger.Info("scheduling retry", "next_attempt", attempt+2, "backoff", backoff)
+			logger.Info("scheduling retry", "next_attempt", job.Attempt+2, "backoff", backoff)
 			p.metrics.RecordJobRetry(ctx, job.ID)
 
 			// Sleep for backoff using timer for proper cleanup
@@ -248,6 +252,9 @@ func (p *Pool) executeJob(job Job, attempt int) {
 				p.sendToDeadLetter(ctx, job, "parent_context_cancelled", parentCtx.Err().Error())
 				return
 			}
+
+			// Increment attempt before re-queuing so worker sees updated value
+			job.Attempt++
 
 			// Re-queue the job (bounded by channel capacity)
 			// Propagate current context through channel for span continuity
