@@ -108,20 +108,32 @@ func NewLogger(component string, attrs ...any) *slog.Logger {
 
 // Info logs an info message.
 func Info(msg string, attrs ...any) {
+	if defaultLogger == nil {
+		initDefault()
+	}
 	defaultLogger.Info(msg, attrs...)
 }
 
 // Error logs an error message.
 func Error(msg string, attrs ...any) {
+	if defaultLogger == nil {
+		initDefault()
+	}
 	defaultLogger.Error(msg, attrs...)
 }
 
 // Debug logs a debug message.
 func Debug(msg string, attrs ...any) {
+	if defaultLogger == nil {
+		initDefault()
+	}
 	defaultLogger.Debug(msg, attrs...)
 }
 
 // Warn logs a warning message.
 func Warn(msg string, attrs ...any) {
+	if defaultLogger == nil {
+		initDefault()
+	}
 	defaultLogger.Warn(msg, attrs...)
 }

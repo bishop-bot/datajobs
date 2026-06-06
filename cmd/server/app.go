@@ -243,7 +243,6 @@ func (a *App) initDatabases() error {
 	// Initialize ILP client
 	if a.questDB != nil {
 		a.ilpClient = ingestion.NewILPClient(a.cfg.QuestDB, a.metrics)
-		ingestion.InitILP(a.cfg.QuestDB, a.metrics)
 	}
 
 	return nil

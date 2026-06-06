@@ -15,25 +15,16 @@ import (
 	"github.com/bishop-bot/datajobs/internal/metrics"
 )
 
-// DefaultILPClient is the global ILP client instance.
-var DefaultILPClient *ILPClient
-
-// InitILP initializes the global ILP client.
-func InitILP(cfg config.QuestDBConfig, m *metrics.Metrics) {
-	DefaultILPClient = NewILPClient(cfg, m)
-}
-
 // ILPClient sends data to QuestDB via the InfluxDB Line Protocol.
 type ILPClient struct {
-	addr       string
-	user       string
-	password   string
-	conn       net.Conn
-	mu         sync.Mutex
-	connected  bool
-	reconnect  bool
-	timeout    time.Duration
-	metrics    *metrics.Metrics
+	addr      string
+	user      string
+	password  string
+	conn      net.Conn
+	mu        sync.Mutex
+	connected bool
+	timeout   time.Duration
+	metrics   *metrics.Metrics
 }
 
 // NewILPClient creates a new ILP client.
@@ -48,15 +39,27 @@ func NewILPClient(cfg config.QuestDBConfig, m *metrics.Metrics) *ILPClient {
 }
 
 // Connect establishes a connection to QuestDB ILP.
+// Thread-safe: uses internal mutex for connection state.
 func (c *ILPClient) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.connected {
+	return c.connectLocked(ctx)
+}
+
+// connectLocked establishes connection assuming caller holds mu.
+// Use Connect() for external callers.
+func (c *ILPClient) connectLocked(ctx context.Context) error {
+	if c.connected && c.conn != nil {
 		return nil
 	}
 
-	conn, err := net.DialTimeout("tcp", c.addr, c.timeout)
+	// Use dialer with context for timeout
+	dialer := &net.Dialer{
+		Timeout: c.timeout,
+	}
+
+	conn, err := dialer.DialContext(ctx, "tcp", c.addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to ILP: %w", err)
 	}
@@ -69,6 +72,7 @@ func (c *ILPClient) Connect(ctx context.Context) error {
 		authLine := fmt.Sprintf("auth\t%s:%s\n", c.user, c.password)
 		if _, err := conn.Write([]byte(authLine)); err != nil {
 			conn.Close()
+			c.conn = nil
 			c.connected = false
 			return fmt.Errorf("failed to send auth: %w", err)
 		}
@@ -90,6 +94,15 @@ func (c *ILPClient) Close() error {
 		return err
 	}
 	return nil
+}
+
+// ensureConnected attempts to connect if not connected.
+// Returns with mu held - caller must unlock.
+func (c *ILPClient) ensureConnected(ctx context.Context) error {
+	if c.connected && c.conn != nil {
+		return nil
+	}
+	return c.connectLocked(ctx)
 }
 
 // IngestCSV ingests a CSV file using ILP.
@@ -307,17 +320,6 @@ func batchToILP(batch [][]string, header []string, timestampIdx int, table strin
 	return lines, nil
 }
 
-func formatTags(tags []string) string {
-	if len(tags) == 0 {
-		return ""
-	}
-	return "," + joinStrings(tags, ",")
-}
-
-func formatFields(fields []string) string {
-	return joinStrings(fields, ",")
-}
-
 func joinStrings(strs []string, sep string) string {
 	if len(strs) == 0 {
 		return ""
@@ -329,21 +331,12 @@ func joinStrings(strs []string, sep string) string {
 	return result
 }
 
-func parseTimestamp(value string) string {
-	// Handle various timestamp formats
-	// QuestDB ILP expects Unix timestamp in nanoseconds or RFC3339
-	// For now, assume Unix timestamp in milliseconds
-	return value
-}
-
 func (c *ILPClient) sendLines(ctx context.Context, lines []string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.connected || c.conn == nil {
-		if err := c.Connect(ctx); err != nil {
-			return err
-		}
+	if err := c.ensureConnected(ctx); err != nil {
+		return err
 	}
 
 	for _, line := range lines {
@@ -377,9 +370,9 @@ func isSymbolColumn(col string, symbols []string) bool {
 
 // BufferedILPClient provides buffered ILP writes for better performance.
 type BufferedILPClient struct {
-	client   *ILPClient
-	buffer   []string
-	bufMutex sync.Mutex
+	client    *ILPClient
+	buffer    []string
+	bufMutex  sync.Mutex
 	flushSize int
 }
 
@@ -387,7 +380,7 @@ type BufferedILPClient struct {
 func NewBufferedILPClient(client *ILPClient, flushSize int) *BufferedILPClient {
 	return &BufferedILPClient{
 		client:    client,
-		buffer:     make([]string, 0, flushSize),
+		buffer:    make([]string, 0, flushSize),
 		flushSize: flushSize,
 	}
 }
@@ -398,7 +391,7 @@ func (bc *BufferedILPClient) Write(line string) {
 	defer bc.bufMutex.Unlock()
 	bc.buffer = append(bc.buffer, line)
 	if len(bc.buffer) >= bc.flushSize {
-		bc.flush()
+		bc.flushLocked()
 	}
 }
 
@@ -406,10 +399,10 @@ func (bc *BufferedILPClient) Write(line string) {
 func (bc *BufferedILPClient) Flush() {
 	bc.bufMutex.Lock()
 	defer bc.bufMutex.Unlock()
-	bc.flush()
+	bc.flushLocked()
 }
 
-func (bc *BufferedILPClient) flush() {
+func (bc *BufferedILPClient) flushLocked() {
 	if len(bc.buffer) > 0 {
 		bc.client.sendLines(context.Background(), bc.buffer)
 		bc.buffer = bc.buffer[:0]

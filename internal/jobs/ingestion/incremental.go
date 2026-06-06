@@ -10,11 +10,9 @@ import (
 )
 
 // IncrementalUpdateHandler handles incremental data updates via ILP.
+// Deprecated: Use IncrementalUpdateWithILP with explicit ILP client instead.
 func IncrementalUpdateHandler(ctx context.Context, job worker.Job) (string, error) {
-	if ingestion.DefaultILPClient == nil {
-		return "", fmt.Errorf("ILP client not initialized")
-	}
-	return IncrementalUpdateWithILP(ctx, job, ingestion.DefaultILPClient)
+	return "", fmt.Errorf("IncrementalUpdateHandler requires explicit ILP client: use IncrementalUpdateWithILP")
 }
 
 // IncrementalUpdateWithILP performs incremental update using the provided ILP client.
