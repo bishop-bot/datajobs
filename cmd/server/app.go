@@ -251,10 +251,11 @@ func (a *App) initDatabases() error {
 
 // initIB initializes the IB client.
 func (a *App) initIB() error {
-	if err := providers.InitIB(a.cfg.IB); err != nil {
+	ibClient, err := providers.NewIBClient(a.cfg.IB)
+	if err != nil {
 		return err
 	}
-	a.ibClient = providers.GetIB()
+	a.ibClient = ibClient
 	return nil
 }
 

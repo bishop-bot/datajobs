@@ -17,14 +17,6 @@ type IBClient struct {
 	closed bool
 }
 
-// Singleton instance and lock for backward compatibility.
-// Deprecated: Will be removed once all callers migrated to dependency injection.
-var (
-	ibClient     *IBClient
-	ibClientOnce sync.Once
-	ibClientErr  error
-)
-
 // NewIBClient creates a new IB client instance.
 // This is the preferred constructor for dependency injection.
 func NewIBClient(cfg config.IBConfig) (*IBClient, error) {
@@ -48,22 +40,6 @@ func NewIBClient(cfg config.IBConfig) (*IBClient, error) {
 		client: client,
 		cfg:    cfg,
 	}, nil
-}
-
-// InitIB initializes the singleton IB client.
-// Safe to call multiple times; only initializes once.
-// Deprecated: Use NewIBClient + direct assignment instead.
-func InitIB(cfg config.IBConfig) error {
-	ibClientOnce.Do(func() {
-		ibClient, ibClientErr = NewIBClient(cfg)
-	})
-	return ibClientErr
-}
-
-// GetIB returns the singleton IB client instance.
-// Deprecated: Use direct dependency injection instead.
-func GetIB() *IBClient {
-	return ibClient
 }
 
 // Client returns the underlying ibapi client.
