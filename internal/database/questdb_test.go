@@ -69,18 +69,19 @@ func TestOHLCVColumns(t *testing.T) {
 }
 
 func TestOHLCVUpsertResultDuration(t *testing.T) {
-	start := time.Now()
+	// Use a known duration instead of time.Since() which can return 0 on fast machines
+	expectedDuration := 250 * time.Millisecond
 	result := &OHLCVUpsertResult{
 		RowsAffected: 100,
-		Duration:     time.Since(start),
+		Duration:     expectedDuration,
 	}
 
 	if result.RowsAffected != 100 {
 		t.Errorf("expected RowsAffected 100, got %d", result.RowsAffected)
 	}
 
-	if result.Duration <= 0 {
-		t.Error("expected positive duration")
+	if result.Duration != expectedDuration {
+		t.Errorf("expected duration %v, got %v", expectedDuration, result.Duration)
 	}
 }
 
