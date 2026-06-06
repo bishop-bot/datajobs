@@ -18,6 +18,7 @@ type IBClient struct {
 }
 
 // Singleton instance and lock for backward compatibility.
+// Deprecated: Will be removed once all callers migrated to dependency injection.
 var (
 	ibClient     *IBClient
 	ibClientOnce sync.Once

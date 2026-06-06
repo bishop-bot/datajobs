@@ -42,6 +42,7 @@ func (r *Registry) Get(name string) (worker.JobFunc, bool) {
 }
 
 // BuiltInHandlers returns the built-in handlers with default implementations.
+// Note: ib_ping requires IB provider and is registered separately in RegisterQuestDBHandlers.
 func BuiltInHandlers() map[string]worker.JobFunc {
 	return map[string]worker.JobFunc{
 		"noop":                system.NoopHandler,
@@ -49,7 +50,6 @@ func BuiltInHandlers() map[string]worker.JobFunc {
 		"incremental_update":  jobingestion.IncrementalUpdateHandler,
 		"questdb_maintenance": jobquestdb.MaintenanceHandler,
 		"sqlite_to_questdb":   jobingestion.SQLiteToQuestDBHandler,
-		"ib_ping":             ibproviders.PingHandler,
 	}
 }
 
@@ -70,6 +70,11 @@ func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqlit
 
 	// Register SQLite to QuestDB sync
 	pool.RegisterHandler("sqlite_to_questdb", jobingestion.SQLiteToQuestDBHandler)
+
+	// Register IB ping handler if provider is available
+	if ibProvider != nil {
+		pool.RegisterHandler("ib_ping", ibproviders.PingHandler(ibProvider))
+	}
 
 	// Register historical data handler with IB provider
 	if questDB != nil && sqliteDB != nil {
