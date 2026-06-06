@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/bishop-bot/datajobs/internal/logging"
 )
 
 // Response is a standard API response.
@@ -16,5 +18,7 @@ type Response struct {
 func respondJSON(w http.ResponseWriter, status int, resp Response) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logging.Warn("failed to encode JSON response", "status", status, "error", err)
+	}
 }

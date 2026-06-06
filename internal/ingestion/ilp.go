@@ -180,11 +180,15 @@ func (c *ILPClient) IngestCSV(ctx context.Context, table string, csvPath string,
 		}
 
 		// Convert batch to ILP format and send
-		lines, err := batchToILP(batch, header, timestampIdx, table, opts)
+		lines, skippedRows, err := batchToILP(batch, header, timestampIdx, table, opts)
 		if err != nil {
 			errors++
 			result.Errors = append(result.Errors, err.Error())
 			continue
+		}
+		if skippedRows > 0 {
+			logging.Warn("dropped malformed rows during batch conversion", "count", skippedRows)
+			result.Errors = append(result.Errors, fmt.Sprintf("dropped %d malformed rows", skippedRows))
 		}
 
 		if err := c.sendLines(ctx, lines); err != nil {
@@ -273,12 +277,15 @@ func (c *ILPClient) readBatch(reader *csv.Reader, batchSize int) ([][]string, er
 	return batch, nil
 }
 
-func batchToILP(batch [][]string, header []string, timestampIdx int, table string, opts CSVOptions) ([]string, error) {
+func batchToILP(batch [][]string, header []string, timestampIdx int, table string, opts CSVOptions) ([]string, int, error) {
 	lines := make([]string, 0, len(batch))
+	skippedRows := 0
 
 	for _, row := range batch {
 		if len(row) != len(header) {
-			continue // Skip malformed rows
+			skippedRows++
+			logging.Warn("skipping malformed row", "expected_cols", len(header), "actual_cols", len(row))
+			continue
 		}
 
 		// Build ILP line: table,tag fields,field values,timestamp
@@ -317,7 +324,7 @@ func batchToILP(batch [][]string, header []string, timestampIdx int, table strin
 		lines = append(lines, line)
 	}
 
-	return lines, nil
+	return lines, skippedRows, nil
 }
 
 func joinStrings(strs []string, sep string) string {
@@ -404,7 +411,9 @@ func (bc *BufferedILPClient) Flush() {
 
 func (bc *BufferedILPClient) flushLocked() {
 	if len(bc.buffer) > 0 {
-		bc.client.sendLines(context.Background(), bc.buffer)
+		if err := bc.client.sendLines(context.Background(), bc.buffer); err != nil {
+			logging.Warn("failed to flush buffered lines", "count", len(bc.buffer), "error", err)
+		}
 		bc.buffer = bc.buffer[:0]
 	}
 }

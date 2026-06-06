@@ -190,16 +190,22 @@ func getAllInstruments(ctx context.Context, sqliteDB *database.DB) ([]instrument
 // scanInstruments scans rows into instrument slice.
 func scanInstruments(rows *sql.Rows) ([]instrument, error) {
 	var instruments []instrument
+	var scanErrors int
 	for rows.Next() {
 		var i instrument
 		var securityType sql.NullString
 		if err := rows.Scan(&i.Conid, &i.Symbol, &i.Exchange, &securityType); err != nil {
+			scanErrors++
+			logging.Warn("failed to scan instrument row", "error", err)
 			continue
 		}
 		if securityType.Valid {
 			i.SecurityType = securityType.String
 		}
 		instruments = append(instruments, i)
+	}
+	if scanErrors > 0 {
+		logging.Warn("dropped rows due to scan errors", "count", scanErrors)
 	}
 	return instruments, rows.Err()
 }

@@ -152,8 +152,10 @@ func (c *HTTPClient) sendImportRequest(ctx context.Context, table string, csvDat
 	// Format: {"ok": true, ...} or just the id
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		// Try to extract import ID from plain text response
-		return string(respBody), nil
+		// If unmarshal fails, check if response indicates error
+		logging.Warn("failed to parse QuestDB response as JSON", "body", string(respBody), "error", err)
+		// Don't silently treat error responses as success - return error instead
+		return "", fmt.Errorf("invalid JSON response from QuestDB: %s", string(respBody))
 	}
 
 	// Check for import id in response
@@ -190,7 +192,11 @@ func (c *HTTPClient) GetImportStatus(ctx context.Context, importID string) (*Imp
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logging.Warn("failed to read error response body", "status", resp.StatusCode, "error", err)
+			return nil, fmt.Errorf("status check returned %d (body read failed: %w)", resp.StatusCode, err)
+		}
 		return nil, fmt.Errorf("status check returned %d: %s", resp.StatusCode, string(body))
 	}
 
