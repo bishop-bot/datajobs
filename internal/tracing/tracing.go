@@ -24,9 +24,6 @@ type Config struct {
 	Insecure     bool
 }
 
-// Tracer is the application tracer.
-var tracer trace.Tracer
-
 // Provider is the OpenTelemetry trace provider.
 var Provider *sdktrace.TracerProvider
 
@@ -74,7 +71,6 @@ func Init(ctx context.Context, cfg Config) error {
 		propagation.Baggage{},
 	))
 
-	tracer = Provider.Tracer(cfg.ServiceName)
 	return nil
 }
 
@@ -88,41 +84,29 @@ func Shutdown(ctx context.Context) error {
 
 // Tracer returns the application tracer.
 func Tracer() trace.Tracer {
-	if tracer == nil {
-		return otel.Tracer("datajobs")
+	return otel.Tracer("datajobs")
+}
+
+// StartSpan starts a new span with the given name and attributes.
+func StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
+	return Tracer().Start(ctx, name, trace.WithAttributes(attrs...))
+}
+
+// AddAttributes adds attributes to the current span.
+func AddAttributes(ctx context.Context, attrs ...attribute.KeyValue) {
+	if span := trace.SpanFromContext(ctx); span != nil {
+		span.SetAttributes(attrs...)
 	}
-	return tracer
-}
-
-// StartSpan starts a new span with the given name.
-func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return Tracer().Start(ctx, name, opts...)
-}
-
-// AddSpanAttributes adds attributes to the current span.
-func AddSpanAttributes(ctx context.Context, attrs ...attribute.KeyValue) {
-	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attrs...)
 }
 
 // RecordError records an error on the current span.
-func RecordError(ctx context.Context, err error, attrs ...attribute.KeyValue) {
-	span := trace.SpanFromContext(ctx)
-	span.RecordError(err)
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func RecordError(ctx context.Context, err error) {
+	if span := trace.SpanFromContext(ctx); span != nil {
+		span.RecordError(err)
 	}
 }
 
 // SpanFromContext returns the current span from context.
 func SpanFromContext(ctx context.Context) trace.Span {
 	return trace.SpanFromContext(ctx)
-}
-
-// WithJobID adds job ID to the span context.
-func WithJobID(ctx context.Context, jobID string) context.Context {
-	_, span := Tracer().Start(ctx, "job execution")
-	span.SetAttributes(attribute.String("job.id", jobID))
-	span.End()
-	return ctx
 }
