@@ -44,8 +44,8 @@ func NewClient(cfg config.IBConfig) (*Client, error) {
 		cfg:    cfg,
 	}
 
-	// Initialize authenticator if credentials are configured
-	if cfg.AuthRequired && cfg.Username != "" && cfg.Password != "" {
+	// Initialize authenticator if credentials are provided
+	if cfg.Username != "" && cfg.Password != "" {
 		auth, err := NewIBGatewayAuthenticator(cfg)
 		if err != nil {
 			logging.Warn("failed to create IB authenticator", "error", err)

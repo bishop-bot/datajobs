@@ -69,7 +69,6 @@ type IBConfig struct {
 	// Authentication settings
 	Username           string `yaml:"username" env:"IB_USERNAME"`
 	Password           string `yaml:"password" env:"IB_PASSWORD"`
-	AuthRequired       bool   `yaml:"authRequired" env:"IB_AUTH_REQUIRED"`
 	SecondFactorMethod string `yaml:"secondFactorMethod" env:"IB_SECOND_FACTOR_METHOD"` // SMS, TOTP, IBKeyAndroid, IBKeyIOS
 	TOTPSecret         string `yaml:"totpSecret" env:"IB_TOTP_SECRET"`
 }
@@ -219,7 +218,6 @@ func applyEnvOverrides(cfg *Config) {
 	setDuration(&cfg.IB.Timeout, "IB_TIMEOUT")
 	setString(&cfg.IB.Username, "IB_USERNAME")
 	setString(&cfg.IB.Password, "IB_PASSWORD")
-	setBool(&cfg.IB.AuthRequired, "IB_AUTH_REQUIRED")
 	setString(&cfg.IB.SecondFactorMethod, "IB_SECOND_FACTOR_METHOD")
 	setString(&cfg.IB.TOTPSecret, "IB_TOTP_SECRET")
 
