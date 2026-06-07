@@ -1,4 +1,4 @@
-package providers
+package ib
 
 import (
 	"context"
@@ -9,17 +9,25 @@ import (
 	"github.com/bishop-bot/datajobs/internal/logging"
 )
 
-// IBClient wraps the IB Web API client with thread-safe lifecycle.
-type IBClient struct {
+// Client wraps the IB Web API client with optional authentication support.
+type Client struct {
 	client *ibapi.Client
+
+	// Authentication
+	authenticator Authenticator
+	authMu        sync.Mutex
+	authenticated bool
+
+	// Configuration
 	cfg    config.IBConfig
 	mu     sync.RWMutex
 	closed bool
 }
 
-// NewIBClient creates a new IB client instance.
+// NewClient creates a new IB client instance.
 // This is the preferred constructor for dependency injection.
-func NewIBClient(cfg config.IBConfig) (*IBClient, error) {
+// If auth credentials are configured, an authenticator will be created.
+func NewClient(cfg config.IBConfig) (*Client, error) {
 	opts := []ibapi.ClientOption{
 		ibapi.WithBaseURL(cfg.BaseURL),
 		ibapi.WithInsecureSkipVerify(cfg.InsecureSkipVerify),
@@ -31,24 +39,41 @@ func NewIBClient(cfg config.IBConfig) (*IBClient, error) {
 		return nil, err
 	}
 
+	c := &Client{
+		client: client,
+		cfg:    cfg,
+	}
+
+	// Initialize authenticator if credentials are configured
+	if cfg.AuthRequired && cfg.Username != "" && cfg.Password != "" {
+		auth, err := NewIBGatewayAuthenticator(cfg)
+		if err != nil {
+			logging.Warn("failed to create IB authenticator", "error", err)
+		} else if auth != nil {
+			c.authenticator = auth
+			logging.Info("IB authenticator configured",
+				"username", cfg.Username,
+				"base_url", cfg.BaseURL,
+			)
+		}
+	}
+
 	logging.Info("IB client created",
 		"base_url", cfg.BaseURL,
 		"insecure", cfg.InsecureSkipVerify,
+		"auth_configured", c.authenticator != nil,
 	)
 
-	return &IBClient{
-		client: client,
-		cfg:    cfg,
-	}, nil
+	return c, nil
 }
 
 // Client returns the underlying ibapi client.
-func (c *IBClient) Client() *ibapi.Client {
+func (c *Client) Client() *ibapi.Client {
 	return c.client
 }
 
 // Ping pings the IB Client Portal Gateway.
-func (c *IBClient) Ping(ctx context.Context) error {
+func (c *Client) Ping(ctx context.Context) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -61,7 +86,7 @@ func (c *IBClient) Ping(ctx context.Context) error {
 }
 
 // AuthStatus returns the current authentication status.
-func (c *IBClient) AuthStatus(ctx context.Context) (*ibapi.AuthStatusResponse, error) {
+func (c *Client) AuthStatus(ctx context.Context) (*ibapi.AuthStatusResponse, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -73,7 +98,7 @@ func (c *IBClient) AuthStatus(ctx context.Context) (*ibapi.AuthStatusResponse, e
 }
 
 // IsConnected checks if the client is connected to the gateway.
-func (c *IBClient) IsConnected(ctx context.Context) bool {
+func (c *Client) IsConnected(ctx context.Context) bool {
 	if err := c.Ping(ctx); err != nil {
 		logging.Warn("IB connection check failed", "error", err)
 		return false
@@ -81,8 +106,65 @@ func (c *IBClient) IsConnected(ctx context.Context) bool {
 	return true
 }
 
+// IsAuthenticated checks if the client is authenticated to IB.
+func (c *Client) IsAuthenticated(ctx context.Context) bool {
+	if c.authenticator == nil {
+		// No authenticator configured, assume not needed
+		return true
+	}
+
+	status, err := c.AuthStatus(ctx)
+	if err != nil {
+		logging.Warn("failed to check auth status", "error", err)
+		return false
+	}
+
+	return status.Authenticated
+}
+
+// EnsureAuthenticated ensures the client is authenticated.
+// Returns nil if already authenticated or auth succeeds.
+// Returns error if auth is required but fails.
+func (c *Client) EnsureAuthenticated(ctx context.Context) error {
+	if c.authenticator == nil {
+		return nil
+	}
+
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+
+	// Double-check with lock held
+	status, err := c.client.Session().AuthStatus(ctx)
+	if err != nil {
+		return err
+	}
+
+	if status.Authenticated {
+		c.authenticated = true
+		return nil
+	}
+
+	// Need to authenticate
+	logging.Info("IB not authenticated, attempting authentication")
+	if err := c.authenticator.Authenticate(ctx); err != nil {
+		return err
+	}
+
+	// Update client with authenticated HTTP client
+	c.client, _ = ibapi.NewClient(
+		ibapi.WithBaseURL(c.cfg.BaseURL),
+		ibapi.WithInsecureSkipVerify(c.cfg.InsecureSkipVerify),
+		ibapi.WithTimeout(c.cfg.Timeout),
+		ibapi.WithHTTPClient(c.authenticator.HTTPClient()),
+	)
+	c.authenticated = true
+
+	logging.Info("IB authentication successful")
+	return nil
+}
+
 // Close closes the IB client and releases resources.
-func (c *IBClient) Close() error {
+func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -91,12 +173,17 @@ func (c *IBClient) Close() error {
 	}
 
 	c.closed = true
+
+	if c.authenticator != nil {
+		c.authenticator.Close()
+	}
+
 	logging.Info("closing IB client")
 	return c.client.Close()
 }
 
 // Reconnect attempts to reconnect the IB client.
-func (c *IBClient) Reconnect() error {
+func (c *Client) Reconnect() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -107,6 +194,9 @@ func (c *IBClient) Reconnect() error {
 	// Close existing client
 	c.client.Close()
 
+	// Reset auth state
+	c.authenticated = false
+
 	// Create new client
 	newClient, err := ibapi.NewClient(
 		ibapi.WithBaseURL(c.cfg.BaseURL),
@@ -115,6 +205,27 @@ func (c *IBClient) Reconnect() error {
 	)
 	if err != nil {
 		return err
+	}
+
+	// If we had an authenticator, re-authenticate
+	if c.authenticator != nil {
+		c.authenticator.Close()
+		auth, err := NewIBGatewayAuthenticator(c.cfg)
+		if err != nil {
+			return err
+		}
+		c.authenticator = auth
+
+		// Authenticate and update client
+		if err := c.authenticator.Authenticate(context.Background()); err != nil {
+			return err
+		}
+		newClient, _ = ibapi.NewClient(
+			ibapi.WithBaseURL(c.cfg.BaseURL),
+			ibapi.WithInsecureSkipVerify(c.cfg.InsecureSkipVerify),
+			ibapi.WithTimeout(c.cfg.Timeout),
+			ibapi.WithHTTPClient(c.authenticator.HTTPClient()),
+		)
 	}
 
 	c.client = newClient
@@ -130,7 +241,7 @@ func (c *IBClient) Reconnect() error {
 //   - bar: Bar size (e.g., "1min", "5mins", "1hour", "1day")
 //   - startTime: Optional start time in YYYYMMDD-HH:MM:SS format
 //   - outsideRth: Include data outside regular trading hours
-func (c *IBClient) HistoricalData(ctx context.Context, req HistoricalDataRequest) (*ibapi.HistoricalDataResponse, error) {
+func (c *Client) HistoricalData(ctx context.Context, req HistoricalDataRequest) (*ibapi.HistoricalDataResponse, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -177,15 +288,4 @@ func (r HistoricalDataRequest) ToIBRequest() ibapi.HistoricalDataRequest {
 		OutsideRth: r.OutsideRth,
 		Source:     r.Source,
 	}
-}
-
-// Errors
-var (
-	ErrClientClosed = &ClientClosedError{}
-)
-
-type ClientClosedError struct{}
-
-func (e *ClientClosedError) Error() string {
-	return "IB client is closed"
 }

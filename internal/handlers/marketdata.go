@@ -9,7 +9,7 @@ import (
 	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/ingestion"
 	"github.com/bishop-bot/datajobs/internal/logging"
-	"github.com/bishop-bot/datajobs/internal/providers"
+	"github.com/bishop-bot/datajobs/internal/providers/ib"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 
@@ -29,15 +29,15 @@ type Instrument struct {
 
 // MarketDataHandler handles market data endpoints.
 type MarketDataHandler struct {
-	pool      *worker.Pool
-	ibProvider providers.IBProvider
+	pool       *worker.Pool
+	ibProvider ib.Provider
 	sqliteDB  *database.DB
 	questdb   *database.QuestDB
 }
 
 // NewMarketDataHandler creates a new market data handler.
 // The ibProvider parameter accepts either *IBClient or a mock implementation.
-func NewMarketDataHandler(pool *worker.Pool, ibProvider providers.IBProvider, sqliteDB *database.DB, questdb *database.QuestDB) *MarketDataHandler {
+func NewMarketDataHandler(pool *worker.Pool, ibProvider ib.Provider, sqliteDB *database.DB, questdb *database.QuestDB) *MarketDataHandler {
 	return &MarketDataHandler{
 		pool:      pool,
 		ibProvider: ibProvider,
@@ -97,7 +97,7 @@ func (h *MarketDataHandler) DownloadHistoricalData(
 	)
 
 	// Fetch historical data from IB
-	req := providers.HistoricalDataRequest{
+	req := ib.HistoricalDataRequest{
 		Conid:      conid,
 		Exchange:   exchange,
 		Period:     period,
@@ -225,7 +225,7 @@ func (h *MarketDataHandler) GetHistoricalData(w http.ResponseWriter, r *http.Req
 	startTime := r.URL.Query().Get("startTime")
 	outsideRth := r.URL.Query().Get("outsideRth") == "true"
 
-	req := providers.HistoricalDataRequest{
+	req := ib.HistoricalDataRequest{
 		Conid:      conid,
 		Exchange:   exchange,
 		Period:     period,

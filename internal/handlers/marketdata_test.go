@@ -7,15 +7,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/bishop-bot/datajobs/internal/providers"
+	"github.com/bishop-bot/datajobs/internal/providers/ib"
 	ibapi "github.com/bishop-bot/ibapi-go"
 )
 
 func TestNewMarketDataHandler_WithMock(t *testing.T) {
-	mockIB := providers.NewMockIBClient()
-	
+	mockIB := ib.NewMockClient()
+
 	handler := NewMarketDataHandler(nil, mockIB, nil, nil)
-	
+
 	if handler == nil {
 		t.Fatal("handler should not be nil")
 	}
@@ -26,7 +26,7 @@ func TestNewMarketDataHandler_WithMock(t *testing.T) {
 
 func TestNewMarketDataHandler_WithNilIB(t *testing.T) {
 	handler := NewMarketDataHandler(nil, nil, nil, nil)
-	
+
 	if handler == nil {
 		t.Fatal("handler should not be nil")
 	}
@@ -36,7 +36,7 @@ func TestNewMarketDataHandler_WithNilIB(t *testing.T) {
 }
 
 func TestMarketDataHandler_GetHistoricalData_Success(t *testing.T) {
-	mockIB := providers.NewMockIBClient().WithConnected(true).WithHistoricalDataResponse(
+	mockIB := ib.NewMockClient().WithConnected(true).WithHistoricalDataResponse(
 		&ibapi.HistoricalDataResponse{
 			Symbol: "AAPL",
 			Data: []ibapi.HistoricalDataBar{
@@ -97,7 +97,7 @@ func TestMarketDataHandler_GetHistoricalData_NoIBProvider(t *testing.T) {
 }
 
 func TestMarketDataHandler_GetHistoricalData_MissingParams(t *testing.T) {
-	mockIB := providers.NewMockIBClient()
+	mockIB := ib.NewMockClient()
 	handler := NewMarketDataHandler(nil, mockIB, nil, nil)
 
 	tests := []struct {
@@ -136,7 +136,7 @@ func TestMarketDataHandler_GetHistoricalData_MissingParams(t *testing.T) {
 }
 
 func TestMarketDataHandler_GetHistoricalData_IBError(t *testing.T) {
-	mockIB := providers.NewMockIBClient().WithConnected(true).WithHistoricalDataError(
+	mockIB := ib.NewMockClient().WithConnected(true).WithHistoricalDataError(
 		context.DeadlineExceeded,
 	)
 
@@ -175,7 +175,7 @@ func TestMarketDataHandler_DownloadHistoricalData_NoIBProvider(t *testing.T) {
 }
 
 func TestMarketDataHandler_DownloadHistoricalData_NoSymbolOrConid(t *testing.T) {
-	mockIB := providers.NewMockIBClient()
+	mockIB := ib.NewMockClient()
 	handler := NewMarketDataHandler(nil, mockIB, nil, nil)
 
 	_, err := handler.DownloadHistoricalData(
@@ -189,7 +189,7 @@ func TestMarketDataHandler_DownloadHistoricalData_NoSymbolOrConid(t *testing.T) 
 }
 
 func TestMarketDataHandler_DownloadHistoricalData_NoQuestDB(t *testing.T) {
-	mockIB := providers.NewMockIBClient()
+	mockIB := ib.NewMockClient()
 	handler := NewMarketDataHandler(nil, mockIB, nil, nil) // questdb is nil
 
 	_, err := handler.DownloadHistoricalData(
@@ -203,7 +203,7 @@ func TestMarketDataHandler_DownloadHistoricalData_NoQuestDB(t *testing.T) {
 }
 
 func TestMockIBClient_BasicOperations(t *testing.T) {
-	mock := providers.NewMockIBClient()
+	mock := ib.NewMockClient()
 
 	// Test Ping
 	if err := mock.Ping(context.Background()); err != nil {
@@ -235,8 +235,8 @@ func TestMockIBClient_BasicOperations(t *testing.T) {
 
 func TestMockIBClient_ErrorResponses(t *testing.T) {
 	t.Run("Ping error", func(t *testing.T) {
-		mock := providers.NewMockIBClient().WithPingError(context.DeadlineExceeded)
-		
+		mock := ib.NewMockClient().WithPingError(context.DeadlineExceeded)
+
 		err := mock.Ping(context.Background())
 		if err != context.DeadlineExceeded {
 			t.Errorf("expected DeadlineExceeded, got %v", err)
@@ -244,17 +244,17 @@ func TestMockIBClient_ErrorResponses(t *testing.T) {
 	})
 
 	t.Run("IsConnected false when ping error", func(t *testing.T) {
-		mock := providers.NewMockIBClient().WithPingError(context.DeadlineExceeded)
-		
+		mock := ib.NewMockClient().WithPingError(context.DeadlineExceeded)
+
 		if mock.IsConnected(context.Background()) {
 			t.Error("IsConnected should return false when Ping fails")
 		}
 	})
 
 	t.Run("HistoricalData error", func(t *testing.T) {
-		mock := providers.NewMockIBClient().WithHistoricalDataError(context.DeadlineExceeded)
-		
-		_, err := mock.HistoricalData(context.Background(), providers.HistoricalDataRequest{})
+		mock := ib.NewMockClient().WithHistoricalDataError(context.DeadlineExceeded)
+
+		_, err := mock.HistoricalData(context.Background(), ib.HistoricalDataRequest{})
 		if err != context.DeadlineExceeded {
 			t.Errorf("expected DeadlineExceeded, got %v", err)
 		}
@@ -262,7 +262,7 @@ func TestMockIBClient_ErrorResponses(t *testing.T) {
 }
 
 func TestMockIBClient_Close(t *testing.T) {
-	mock := providers.NewMockIBClient()
+	mock := ib.NewMockClient()
 
 	err := mock.Close()
 	if err != nil {
@@ -270,26 +270,26 @@ func TestMockIBClient_Close(t *testing.T) {
 	}
 
 	// Operations after close should return ErrClientClosed
-	_, err = mock.HistoricalData(context.Background(), providers.HistoricalDataRequest{})
-	if err != providers.ErrClientClosed {
+	_, err = mock.HistoricalData(context.Background(), ib.HistoricalDataRequest{})
+	if err != ib.ErrClientClosed {
 		t.Errorf("expected ErrClientClosed, got %v", err)
 	}
 
 	err = mock.Ping(context.Background())
-	if err != providers.ErrClientClosed {
+	if err != ib.ErrClientClosed {
 		t.Errorf("expected ErrClientClosed, got %v", err)
 	}
 }
 
 func TestMockIBClient_WithHistoricalDataResponse(t *testing.T) {
-	resp := providers.MockHistoricalDataResponse("AAPL",
-		providers.MockHistoricalDataBar(1719792000000, 185.50, 186.75, 184.90, 186.20, 50000000),
-		providers.MockHistoricalDataBar(1719878400000, 186.00, 187.00, 185.50, 186.50, 45000000),
+	resp := ib.MockHistoricalDataResponse("AAPL",
+		ib.MockHistoricalDataBar(1719792000000, 185.50, 186.75, 184.90, 186.20, 50000000),
+		ib.MockHistoricalDataBar(1719878400000, 186.00, 187.00, 185.50, 186.50, 45000000),
 	)
 
-	mock := providers.NewMockIBClient().WithHistoricalDataResponse(resp)
+	mock := ib.NewMockClient().WithHistoricalDataResponse(resp)
 
-	result, err := mock.HistoricalData(context.Background(), providers.HistoricalDataRequest{
+	result, err := mock.HistoricalData(context.Background(), ib.HistoricalDataRequest{
 		Conid: "265598",
 	})
 
@@ -305,12 +305,12 @@ func TestMockIBClient_WithHistoricalDataResponse(t *testing.T) {
 }
 
 func TestMockIBClient_CallRecording(t *testing.T) {
-	mock := providers.NewMockIBClient()
+	mock := ib.NewMockClient()
 
 	// Make some calls
 	mock.Ping(context.Background())
 	mock.IsConnected(context.Background())
-	mock.HistoricalData(context.Background(), providers.HistoricalDataRequest{
+	mock.HistoricalData(context.Background(), ib.HistoricalDataRequest{
 		Conid: "123", Exchange: "SMART", Period: "1d", Bar: "5mins",
 	})
 

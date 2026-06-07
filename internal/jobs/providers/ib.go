@@ -6,18 +6,29 @@ import (
 	"time"
 
 	"github.com/bishop-bot/datajobs/internal/logging"
-	ibproviders "github.com/bishop-bot/datajobs/internal/providers"
+	ibproviders "github.com/bishop-bot/datajobs/internal/providers/ib"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 
 // PingHandler creates a handler that pings the IB Gateway.
-// The ibProvider parameter accepts either *IBClient, *MockIBClient, or any IBProvider implementation.
-func PingHandler(ibProvider ibproviders.IBProvider) worker.JobFunc {
+// It checks authentication status and re-authenticates if needed.
+// The ibProvider parameter accepts either *ib.Client, *ib.MockClient, or any Provider implementation.
+func PingHandler(ibProvider ibproviders.Provider) worker.JobFunc {
 	return func(ctx context.Context, job worker.Job) (string, error) {
 		logger := logging.FromContext(ctx).With("job_id", job.ID)
 
 		if ibProvider == nil {
 			return "", fmt.Errorf("IB provider not available")
+		}
+
+		// Check if provider supports authentication
+		if authProvider, ok := ibProvider.(ibproviders.AuthAwareProvider); ok {
+			// Check and ensure authentication
+			if err := authProvider.EnsureAuthenticated(ctx); err != nil {
+				logger.Error("IB authentication failed", "error", err)
+				return "", fmt.Errorf("authentication failed: %w", err)
+			}
+			logger.Debug("IB authentication verified")
 		}
 
 		logger.Debug("pinging IB gateway")
