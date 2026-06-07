@@ -7,7 +7,6 @@ import (
 	ibapi "github.com/bishop-bot/ibapi-go"
 	ibgateway "github.com/bishop-bot/ibgateway-go"
 	"github.com/bishop-bot/datajobs/internal/config"
-	"github.com/bishop-bot/datajobs/internal/logging"
 )
 
 // Second factor method constants.
@@ -54,30 +53,21 @@ func NewIBGatewayAuthenticator(cfg config.IBConfig) (Authenticator, error) {
 		BaseURL:  cfg.BaseURL,
 	}
 
-	logging.Info("creating IB authenticator",
-		"username", cfg.Username,
-		"base_url", cfg.BaseURL,
-		"second_factor", cfg.SecondFactorMethod,
-	)
-
 	// Set second factor method
 	switch cfg.SecondFactorMethod {
 	case SecondFactorTOTP:
 		authCfg.SecondFactorMethod = ibgateway.TOTP
 		authCfg.TOTPSecret = cfg.TOTPSecret
-		logging.Debug("using TOTP authentication", "totp_secret_set", cfg.TOTPSecret != "")
 	case SecondFactorIBKeyAndroid:
 		authCfg.SecondFactorMethod = ibgateway.IBKeyAndroid
 	case SecondFactorIBKeyIOS:
 		authCfg.SecondFactorMethod = ibgateway.IBKeyIOS
 	case SecondFactorSMS, "":
 		authCfg.SecondFactorMethod = ibgateway.SMS
-		logging.Debug("using SMS authentication")
 	}
 
 	auth, err := ibgateway.NewAuthenticator(authCfg)
 	if err != nil {
-		logging.Error("failed to create ibgateway authenticator", "error", err)
 		return nil, err
 	}
 
@@ -90,26 +80,10 @@ func NewIBGatewayAuthenticator(cfg config.IBConfig) (Authenticator, error) {
 // Authenticate performs the full authentication flow.
 // This includes both the initial authentication and the finalize step.
 func (a *IBGatewayAuthenticator) Authenticate(ctx context.Context) error {
-	logging.Info("starting IB authentication flow")
-
-	// Step 1: Initial authentication
-	logging.Debug("calling ibgateway.Authenticate()")
 	if err := a.authenticator.Authenticate(); err != nil {
-		logging.Error("ibgateway.Authenticate() failed", "error", err)
 		return err
 	}
-	logging.Debug("ibgateway.Authenticate() succeeded")
-
-	// Step 2: Finalize is required to complete the authentication
-	logging.Debug("calling ibgateway.Finalize()")
-	if err := a.authenticator.Finalize(); err != nil {
-		logging.Error("ibgateway.Finalize() failed", "error", err)
-		return err
-	}
-	logging.Debug("ibgateway.Finalize() succeeded")
-
-	logging.Info("IB authentication flow completed")
-	return nil
+	return a.authenticator.Finalize()
 }
 
 // IsAuthenticated checks if the session is authenticated by querying auth status.

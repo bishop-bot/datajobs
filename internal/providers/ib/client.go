@@ -127,7 +127,6 @@ func (c *Client) IsAuthenticated(ctx context.Context) bool {
 // Returns error if auth is required but fails.
 func (c *Client) EnsureAuthenticated(ctx context.Context) error {
 	if c.authenticator == nil {
-		logging.Debug("EnsureAuthenticated: no authenticator configured, skipping")
 		return nil
 	}
 
@@ -137,9 +136,7 @@ func (c *Client) EnsureAuthenticated(ctx context.Context) error {
 	// Skip the pre-check if we haven't authenticated yet
 	// Just attempt authentication directly
 	if !c.authenticated {
-		logging.Info("EnsureAuthenticated: attempting IB authentication")
 		if err := c.authenticator.Authenticate(ctx); err != nil {
-			logging.Error("EnsureAuthenticated: authentication failed", "error", err)
 			return err
 		}
 
@@ -151,14 +148,11 @@ func (c *Client) EnsureAuthenticated(ctx context.Context) error {
 			ibapi.WithHTTPClient(c.authenticator.HTTPClient()),
 		)
 		c.authenticated = true
-
-		logging.Info("EnsureAuthenticated: IB authentication successful")
 		return nil
 	}
 
 	// Already authenticated, verify with a quick ping
 	if _, err := c.client.Session().Ping(ctx); err != nil {
-		logging.Warn("EnsureAuthenticated: ping failed, re-authenticating", "error", err)
 		c.authenticated = false
 		return c.EnsureAuthenticated(ctx)
 	}
