@@ -134,39 +134,35 @@ func (c *Client) EnsureAuthenticated(ctx context.Context) error {
 	c.authMu.Lock()
 	defer c.authMu.Unlock()
 
-	logging.Debug("EnsureAuthenticated: checking current auth status")
+	// Skip the pre-check if we haven't authenticated yet
+	// Just attempt authentication directly
+	if !c.authenticated {
+		logging.Info("EnsureAuthenticated: attempting IB authentication")
+		if err := c.authenticator.Authenticate(ctx); err != nil {
+			logging.Error("EnsureAuthenticated: authentication failed", "error", err)
+			return err
+		}
 
-	// Double-check with lock held
-	status, err := c.client.Session().AuthStatus(ctx)
-	if err != nil {
-		logging.Warn("EnsureAuthenticated: AuthStatus check failed", "error", err)
-		return err
-	}
-
-	logging.Debug("EnsureAuthenticated: current auth status", "authenticated", status.Authenticated)
-
-	if status.Authenticated {
+		// Update client with authenticated HTTP client
+		c.client, _ = ibapi.NewClient(
+			ibapi.WithBaseURL(c.cfg.BaseURL),
+			ibapi.WithInsecureSkipVerify(c.cfg.InsecureSkipVerify),
+			ibapi.WithTimeout(c.cfg.Timeout),
+			ibapi.WithHTTPClient(c.authenticator.HTTPClient()),
+		)
 		c.authenticated = true
+
+		logging.Info("EnsureAuthenticated: IB authentication successful")
 		return nil
 	}
 
-	// Need to authenticate
-	logging.Info("EnsureAuthenticated: IB not authenticated, attempting authentication")
-	if err := c.authenticator.Authenticate(ctx); err != nil {
-		logging.Error("EnsureAuthenticated: authentication failed", "error", err)
-		return err
+	// Already authenticated, verify with a quick ping
+	if _, err := c.client.Session().Ping(ctx); err != nil {
+		logging.Warn("EnsureAuthenticated: ping failed, re-authenticating", "error", err)
+		c.authenticated = false
+		return c.EnsureAuthenticated(ctx)
 	}
 
-	// Update client with authenticated HTTP client
-	c.client, _ = ibapi.NewClient(
-		ibapi.WithBaseURL(c.cfg.BaseURL),
-		ibapi.WithInsecureSkipVerify(c.cfg.InsecureSkipVerify),
-		ibapi.WithTimeout(c.cfg.Timeout),
-		ibapi.WithHTTPClient(c.authenticator.HTTPClient()),
-	)
-	c.authenticated = true
-
-	logging.Info("EnsureAuthenticated: IB authentication successful")
 	return nil
 }
 
