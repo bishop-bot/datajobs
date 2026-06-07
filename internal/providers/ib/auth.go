@@ -78,9 +78,14 @@ func NewIBGatewayAuthenticator(cfg config.IBConfig) (Authenticator, error) {
 }
 
 // Authenticate performs the full authentication flow.
+// This includes both the initial authentication and the finalize step.
 func (a *IBGatewayAuthenticator) Authenticate(ctx context.Context) error {
 	// The ibgateway library handles the full flow including 2FA
-	return a.authenticator.Authenticate()
+	if err := a.authenticator.Authenticate(); err != nil {
+		return err
+	}
+	// Finalize is required to complete the authentication
+	return a.authenticator.Finalize()
 }
 
 // IsAuthenticated checks if the session is authenticated by querying auth status.
