@@ -127,17 +127,23 @@ func (c *Client) IsAuthenticated(ctx context.Context) bool {
 // Returns error if auth is required but fails.
 func (c *Client) EnsureAuthenticated(ctx context.Context) error {
 	if c.authenticator == nil {
+		logging.Debug("EnsureAuthenticated: no authenticator configured, skipping")
 		return nil
 	}
 
 	c.authMu.Lock()
 	defer c.authMu.Unlock()
 
+	logging.Debug("EnsureAuthenticated: checking current auth status")
+
 	// Double-check with lock held
 	status, err := c.client.Session().AuthStatus(ctx)
 	if err != nil {
+		logging.Warn("EnsureAuthenticated: AuthStatus check failed", "error", err)
 		return err
 	}
+
+	logging.Debug("EnsureAuthenticated: current auth status", "authenticated", status.Authenticated)
 
 	if status.Authenticated {
 		c.authenticated = true
@@ -145,8 +151,9 @@ func (c *Client) EnsureAuthenticated(ctx context.Context) error {
 	}
 
 	// Need to authenticate
-	logging.Info("IB not authenticated, attempting authentication")
+	logging.Info("EnsureAuthenticated: IB not authenticated, attempting authentication")
 	if err := c.authenticator.Authenticate(ctx); err != nil {
+		logging.Error("EnsureAuthenticated: authentication failed", "error", err)
 		return err
 	}
 
@@ -159,7 +166,7 @@ func (c *Client) EnsureAuthenticated(ctx context.Context) error {
 	)
 	c.authenticated = true
 
-	logging.Info("IB authentication successful")
+	logging.Info("EnsureAuthenticated: IB authentication successful")
 	return nil
 }
 
