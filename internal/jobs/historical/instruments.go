@@ -30,9 +30,17 @@ func getInstrumentsByConids(ctx context.Context, conids []string, sqliteDB *data
 		return []instrument{}, nil
 	}
 
-	instruments, err := queryInstruments(ctx, sqliteDB, buildInClauseQuery(conids), conidsToArgs(conids))
+	query := buildInClauseQuery(conids)
+	args := conidsToArgs(conids)
+
+	logging.Debug("querying instruments by conids",
+		"conids", conids,
+		"count", len(conids),
+	)
+
+	instruments, err := queryInstruments(ctx, sqliteDB, query, args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query instruments by conids: %w", err)
+		return nil, fmt.Errorf("failed to query instruments by conids (count=%d): %w", len(conids), err)
 	}
 	return instruments, nil
 }
@@ -52,9 +60,15 @@ func getAllInstruments(ctx context.Context, sqliteDB *database.DB) ([]instrument
 
 // queryInstruments executes a query and scans the results into instrument slice.
 func queryInstruments(ctx context.Context, db *database.DB, query string, args []interface{}) ([]instrument, error) {
+	logging.Debug("querying instruments",
+		"query", query,
+		"args_count", len(args),
+	)
+
 	rows, err := db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		// Return wrapped error with context for debugging
+		return nil, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
 
