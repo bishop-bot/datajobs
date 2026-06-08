@@ -324,20 +324,14 @@ func (p *Pool) sendToDeadLetter(ctx context.Context, job Job, reason, errMsg str
 		Reason:   reason,
 	}
 
-	p.deadLetterMu.Lock()
-	if len(p.deadLetterQ) > MaxDeadLetterSize {
-		// Trim to max when exceeding
-		keep := MaxDeadLetterSize / 2
-		p.deadLetterQ = p.deadLetterQ[len(p.deadLetterQ)-keep:]
-	}
-	p.deadLetterQ = append(p.deadLetterQ, dl)
-	p.deadLetterMu.Unlock()
-
+	// Send to channel for async processing
+	// processDeadLetter() will add to deadLetterQ
 	select {
 	case p.deadLetter <- dl:
 		p.metrics.RecordDeadLetter(ctx, job.ID, reason)
 	default:
-		// Channel full or closed, already stored in slice
+		// Channel full or closed, still record metric
+		p.metrics.RecordDeadLetter(ctx, job.ID, reason)
 	}
 }
 
