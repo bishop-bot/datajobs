@@ -13,15 +13,38 @@ import (
 func fetchOHLCV(ctx context.Context, ibProvider ib.Provider, instr instrument, params historicalParams) ([]database.OHLCVBar, error) {
 	req := buildHistoricalDataRequest(instr, params)
 
+	logging.Info("fetching OHLCV from IB",
+		"symbol", instr.Symbol,
+		"conid", instr.Conid,
+		"exchange", instr.Exchange,
+		"period", params.Period,
+		"bar", params.Bar,
+	)
+
 	resp, err := ibProvider.HistoricalData(ctx, req)
 	if err != nil {
+		logging.Error("IB HistoricalData failed",
+			"symbol", instr.Symbol,
+			"error", err.Error(),
+		)
 		return nil, fmt.Errorf("historical data request failed for %s: %w", instr.Symbol, err)
 	}
 
-	if resp == nil || len(resp.Data) == 0 {
-		logging.Debug("no data returned", "symbol", instr.Symbol)
+	if resp == nil {
+		logging.Warn("IB response is nil", "symbol", instr.Symbol)
 		return nil, nil
 	}
 
-	return convertIBBarsToOHLCV(instr.Symbol, resp.Data, params), nil
+	if len(resp.Data) == 0 {
+		logging.Warn("IB returned no data", "symbol", instr.Symbol, "response", resp)
+		return nil, nil
+	}
+
+	bars := convertIBBarsToOHLCV(instr.Symbol, resp.Data, params)
+	logging.Info("converted bars from IB",
+		"symbol", instr.Symbol,
+		"bars_count", len(bars),
+	)
+
+	return bars, nil
 }

@@ -82,6 +82,7 @@ func processInstruments(ctx context.Context, ibProvider ib.Provider, questDB *da
 		}
 
 		if len(bars) == 0 {
+			logger.Warn("no bars to upsert", "symbol", instr.Symbol)
 			continue
 		}
 
@@ -92,7 +93,7 @@ func processInstruments(ctx context.Context, ibProvider ib.Provider, questDB *da
 		}
 
 		totalBars += len(bars)
-		logger.Debug("upserted bars", "symbol", instr.Symbol, "count", len(bars))
+		logger.Info("completed instrument", "symbol", instr.Symbol, "bars_upserted", len(bars))
 	}
 
 	return totalBars, failedSymbols
