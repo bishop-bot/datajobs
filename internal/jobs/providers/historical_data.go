@@ -9,7 +9,7 @@ import (
 	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/ingestion"
 	"github.com/bishop-bot/datajobs/internal/logging"
-	"github.com/bishop-bot/datajobs/internal/providers"
+	"github.com/bishop-bot/datajobs/internal/providers/ib"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 
@@ -28,14 +28,14 @@ const (
 
 // HistoricalDataHandlerWithDB creates a handler with QuestDB and SQLite access.
 // The ibProvider parameter accepts either *IBClient or a mock implementation for testing.
-func HistoricalDataHandlerWithDB(questDB *database.QuestDB, sqliteDB *database.DB, ibProvider providers.IBProvider) worker.JobFunc {
+func HistoricalDataHandlerWithDB(questDB *database.QuestDB, sqliteDB *database.DB, ibProvider ib.Provider) worker.JobFunc {
 	return func(ctx context.Context, job worker.Job) (string, error) {
 		return historicalDataHandlerImpl(ctx, job, questDB, sqliteDB, ibProvider)
 	}
 }
 
 // historicalDataHandlerImpl is the main implementation.
-func historicalDataHandlerImpl(ctx context.Context, job worker.Job, questDB *database.QuestDB, sqliteDB *database.DB, ibProvider providers.IBProvider) (string, error) {
+func historicalDataHandlerImpl(ctx context.Context, job worker.Job, questDB *database.QuestDB, sqliteDB *database.DB, ibProvider ib.Provider) (string, error) {
 	logger := logging.FromContext(ctx).With("job_id", job.ID)
 
 	// Validate IB provider
@@ -211,7 +211,7 @@ func scanInstruments(rows *sql.Rows) ([]instrument, error) {
 }
 
 // fetchInstrumentOHLCV fetches OHLCV data for a single instrument.
-func fetchInstrumentOHLCV(ctx context.Context, ibProvider providers.IBProvider, instr instrument, params historicalParams) ([]database.OHLCVBar, error) {
+func fetchInstrumentOHLCV(ctx context.Context, ibProvider ib.Provider, instr instrument, params historicalParams) ([]database.OHLCVBar, error) {
 	logger := logging.FromContext(ctx)
 
 	// Determine exchange - default to SMART
@@ -221,7 +221,7 @@ func fetchInstrumentOHLCV(ctx context.Context, ibProvider providers.IBProvider, 
 	}
 
 	// Build request
-	req := providers.HistoricalDataRequest{
+	req := ib.HistoricalDataRequest{
 		Conid:      instr.Conid,
 		Exchange:   exchange,
 		Period:     params.Period,

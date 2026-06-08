@@ -63,8 +63,14 @@ type QuestDBConfig struct {
 // IBConfig holds Interactive Brokers Web API settings.
 type IBConfig struct {
 	BaseURL           string        `yaml:"baseURL" env:"IB_BASE_URL"`
-	InsecureSkipVerify bool         `yaml:"insecureSkipVerify" env:"IB_INSECURE_SKIP_VERIFY"`
+	InsecureSkipVerify bool        `yaml:"insecureSkipVerify" env:"IB_INSECURE_SKIP_VERIFY"`
 	Timeout           time.Duration `yaml:"timeout" env:"IB_TIMEOUT"`
+
+	// Authentication settings
+	Username           string `yaml:"username" env:"IB_USERNAME"`
+	Password           string `yaml:"password" env:"IB_PASSWORD"`
+	SecondFactorMethod string `yaml:"secondFactorMethod" env:"IB_SECOND_FACTOR_METHOD"` // SMS, TOTP, IBKeyAndroid, IBKeyIOS
+	TOTPSecret         string `yaml:"totpSecret" env:"IB_TOTP_SECRET"`
 }
 
 // JobConfig holds per-job configuration.
@@ -210,6 +216,10 @@ func applyEnvOverrides(cfg *Config) {
 	setString(&cfg.IB.BaseURL, "IB_BASE_URL")
 	setBool(&cfg.IB.InsecureSkipVerify, "IB_INSECURE_SKIP_VERIFY")
 	setDuration(&cfg.IB.Timeout, "IB_TIMEOUT")
+	setString(&cfg.IB.Username, "IB_USERNAME")
+	setString(&cfg.IB.Password, "IB_PASSWORD")
+	setString(&cfg.IB.SecondFactorMethod, "IB_SECOND_FACTOR_METHOD")
+	setString(&cfg.IB.TOTPSecret, "IB_TOTP_SECRET")
 
 	// Per-job overrides
 	for i := range cfg.Jobs {

@@ -24,7 +24,7 @@ import (
 	"github.com/bishop-bot/datajobs/internal/jobs"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/metrics"
-	"github.com/bishop-bot/datajobs/internal/providers"
+	"github.com/bishop-bot/datajobs/internal/providers/ib"
 	"github.com/bishop-bot/datajobs/internal/scheduler"
 	"github.com/bishop-bot/datajobs/internal/tracing"
 	"github.com/bishop-bot/datajobs/internal/worker"
@@ -40,7 +40,7 @@ type App struct {
 	sqliteDB  *database.DB
 	questDB   *database.QuestDB
 	ilpClient *ingestion.ILPClient
-	ibClient  *providers.IBClient
+	ibClient  *ib.Client
 
 	// Worker & scheduling
 	pool      *worker.Pool
@@ -250,7 +250,7 @@ func (a *App) initDatabases() error {
 
 // initIB initializes the IB client.
 func (a *App) initIB() error {
-	ibClient, err := providers.NewIBClient(a.cfg.IB)
+	ibClient, err := ib.NewClient(a.cfg.IB)
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ func (a *App) initIB() error {
 }
 
 // IBClient returns the IB client.
-func (a *App) IBClient() *providers.IBClient {
+func (a *App) IBClient() *ib.Client {
 	return a.ibClient
 }
 
