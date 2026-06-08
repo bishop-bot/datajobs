@@ -23,14 +23,30 @@ func HistoricalDataHandlerWithDB(questDB *database.QuestDB, sqliteDB *database.D
 func historicalDataHandlerImpl(ctx context.Context, job worker.Job, questDB *database.QuestDB, sqliteDB *database.DB, ibProvider ib.Provider) (string, error) {
 	logger := logging.FromContext(ctx).With("job_id", job.ID)
 
+	logger.Debug("historical data handler started",
+		"sqliteDB_nil", sqliteDB == nil,
+		"questDB_nil", questDB == nil,
+		"ibProvider_nil", ibProvider == nil,
+	)
+
 	if ibProvider == nil {
 		return "", fmt.Errorf("IB provider not available")
 	}
 	if questDB == nil {
 		return "", fmt.Errorf("QuestDB not connected")
 	}
+	if sqliteDB == nil {
+		return "", fmt.Errorf("SQLite DB not available")
+	}
 
 	params := parseHistoricalParams(job.Metadata)
+	logger.Debug("parsed params",
+		"period", params.Period,
+		"bar", params.Bar,
+		"instruments_count", len(params.Instruments),
+		"instruments", params.Instruments,
+	)
+
 	instruments, err := getInstruments(ctx, job, params, sqliteDB)
 	if err != nil {
 		return "", fmt.Errorf("failed to get instruments: %w", err)

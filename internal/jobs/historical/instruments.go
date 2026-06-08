@@ -36,10 +36,17 @@ func getInstrumentsByConids(ctx context.Context, conids []string, sqliteDB *data
 	logging.Debug("querying instruments by conids",
 		"conids", conids,
 		"count", len(conids),
+		"query", query,
 	)
 
 	instruments, err := queryInstruments(ctx, sqliteDB, query, args)
 	if err != nil {
+		// Log the actual error for debugging
+		logging.Error("instrument query failed",
+			"error", err.Error(),
+			"conids", conids,
+			"count", len(conids),
+		)
 		return nil, fmt.Errorf("failed to query instruments by conids (count=%d): %w", len(conids), err)
 	}
 	return instruments, nil

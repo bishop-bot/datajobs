@@ -58,6 +58,14 @@ func New(cfg config.DatabaseConfig) (*DB, error) {
 		}
 	}
 
+	// Verify connection
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to ping SQLite: %w", err)
+	}
+
+	logging.Info("connected to SQLite", "path", cfg.Path)
+
 	return &DB{sqlite: db, cfg: cfg}, nil
 }
 
