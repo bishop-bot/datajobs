@@ -1,5 +1,7 @@
 package metadata
 
+import "fmt"
+
 // GetString extracts a string from metadata with default.
 func GetString(m map[string]interface{}, key, defaultVal string) string {
 	if v, ok := m[key].(string); ok && v != "" {
@@ -33,17 +35,43 @@ func GetStringSlice(m map[string]interface{}, key string) []string {
 	if v, ok := m[key].([]string); ok {
 		return v
 	}
-	// Handle []any from YAML parsing
+	// Handle []any from JSON/YAML parsing (mixed types)
 	if v, ok := m[key].([]any); ok {
 		result := make([]string, 0, len(v))
 		for _, item := range v {
+			// Handle string
 			if s, ok := item.(string); ok {
 				result = append(result, s)
+				continue
+			}
+			// Handle numbers (convert to string)
+			if f, ok := item.(float64); ok {
+				result = append(result, formatFloatAsString(f))
+				continue
+			}
+			// Handle int
+			if i, ok := item.(int); ok {
+				result = append(result, formatIntAsString(i))
+				continue
 			}
 		}
 		return result
 	}
 	return nil
+}
+
+// formatFloatAsString converts a float64 to string without decimal point
+// if it's a whole number, otherwise includes decimal.
+func formatFloatAsString(f float64) string {
+	if f == float64(int64(f)) {
+		return fmt.Sprintf("%d", int64(f))
+	}
+	return fmt.Sprintf("%v", f)
+}
+
+// formatIntAsString converts an int to string.
+func formatIntAsString(i int) string {
+	return fmt.Sprintf("%d", i)
 }
 
 // GetStringPtr extracts a string and returns pointer, or nil if not present.

@@ -167,10 +167,16 @@ func TestGetStringSlice(t *testing.T) {
 			want:       nil,
 		},
 		{
-			name:       "filters non-string items",
+			name:       "converts numbers to strings",
 			metadata:   map[string]interface{}{"key": []any{"a", 123, "b"}},
 			key:        "key",
-			want:       []string{"a", "b"},
+			want:       []string{"a", "123", "b"},
+		},
+		{
+			name:       "handles float64 numbers from JSON",
+			metadata:   map[string]interface{}{"key": []any{265598.0, 272093.0}},
+			key:        "key",
+			want:       []string{"265598", "272093"},
 		},
 	}
 

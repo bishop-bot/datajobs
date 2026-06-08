@@ -198,24 +198,16 @@ func (p *Pool) Submit(ctx context.Context, job Job) error {
 
 // executeJob processes a single job with retry support.
 func (p *Pool) executeJob(job Job, attempt int) {
-	// Create a fresh context for this job execution that isn't tied to the
-	// caller's context (e.g., HTTP request context). The job should run to
-	// completion or timeout regardless of whether the caller (e.g., HTTP)
-	// has cancelled their context.
+	// Create a fresh context for this job execution that is completely
+	// independent of the caller's context (e.g., HTTP request context).
+	// The job should run to completion or timeout based on job.Timeout,
+	// NOT based on how the job was triggered.
 	//
-	// - Scheduled jobs: use context.Background() as parent (no timeout)
-	// - HTTP-triggered jobs: don't inherit HTTP request timeout
-	// - Job timeout is enforced separately via job.Timeout
-	jobCtx, cancelJob := context.WithCancel(context.Background())
-	defer cancelJob()
-
-	// Propagate tracing from parent context if available
-	parentCtx := job.Ctx
-	if parentCtx != nil {
-		// Copy any values from parent context to job context
-		// but don't inherit cancellation
-		jobCtx = parentCtx
-	}
+	// Key: we NEVER inherit the caller's context to prevent:
+	// - HTTP request timeout from killing long-running jobs
+	// - Caller cancellation from affecting job execution
+	// - Context inheritance issues during retry
+	jobCtx := context.Background()
 
 	// Use job.Attempt for span attributes (persists across retries)
 	attemptNum := job.Attempt
