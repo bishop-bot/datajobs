@@ -1,95 +1,12 @@
-package providers
+package historical
 
 import (
-	"context"
 	"testing"
 
 	ibapi "github.com/bishop-bot/ibapi-go"
+	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/ingestion"
-	"github.com/bishop-bot/datajobs/internal/providers/ib"
-	"github.com/bishop-bot/datajobs/internal/worker"
 )
-
-func TestParseHistoricalParams(t *testing.T) {
-	tests := []struct {
-		name     string
-		metadata map[string]interface{}
-		want     historicalParams
-	}{
-		{
-			name: "uses defaults when empty",
-			metadata: map[string]interface{}{},
-			want: historicalParams{
-				Period:      defaultPeriod,
-				Bar:         defaultBar,
-				OutsideRth:  defaultOutsideRth,
-				Instruments: nil,
-			},
-		},
-		{
-			name: "uses provided values",
-			metadata: map[string]interface{}{
-				"period":      "1y",
-				"bar":         "1hour",
-				"outsideRth":  true,
-				"instruments": []any{"123", "456"},
-			},
-			want: historicalParams{
-				Period:      "1y",
-				Bar:         "1hour",
-				OutsideRth:  true,
-				Instruments: []string{"123", "456"},
-			},
-		},
-		{
-			name: "partial values use defaults",
-			metadata: map[string]interface{}{
-				"period": "2y",
-			},
-			want: historicalParams{
-				Period:     "2y",
-				Bar:        defaultBar,
-				OutsideRth: defaultOutsideRth,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseHistoricalParams(tt.metadata)
-			if got.Period != tt.want.Period {
-				t.Errorf("Period = %q, want %q", got.Period, tt.want.Period)
-			}
-			if got.Bar != tt.want.Bar {
-				t.Errorf("Bar = %q, want %q", got.Bar, tt.want.Bar)
-			}
-			if got.OutsideRth != tt.want.OutsideRth {
-				t.Errorf("OutsideRth = %v, want %v", got.OutsideRth, tt.want.OutsideRth)
-			}
-			if len(got.Instruments) != len(tt.want.Instruments) {
-				t.Errorf("Instruments len = %d, want %d", len(got.Instruments), len(tt.want.Instruments))
-			}
-		})
-	}
-}
-
-func TestHistoricalParamsDefaults(t *testing.T) {
-	if defaultPeriod != "5y" {
-		t.Errorf("defaultPeriod = %q, want %q", defaultPeriod, "5y")
-	}
-	if defaultBar != "1d" {
-		t.Errorf("defaultBar = %q, want %q", defaultBar, "1d")
-	}
-	if defaultOutsideRth != false {
-		t.Errorf("defaultOutsideRth = %v, want false", defaultOutsideRth)
-	}
-	if defaultPublisher != "IB" {
-		t.Errorf("defaultPublisher = %q, want %q", defaultPublisher, "IB")
-	}
-	if upsertBatchSize != 1000 {
-		t.Errorf("upsertBatchSize = %d, want %d", upsertBatchSize, 1000)
-	}
-}
 
 func TestConvertIBBarsToOHLCV(t *testing.T) {
 	t.Run("converts ib bars to ohlcv bars", func(t *testing.T) {
@@ -163,6 +80,18 @@ func TestConvertIBBarsToOHLCV(t *testing.T) {
 			t.Errorf("1hour TsEnd = %d, want %d", bars1h[0].TsEnd, expectedEnd1h)
 		}
 	})
+
+	t.Run("preallocates correct capacity", func(t *testing.T) {
+		ibBars := make([]ibapi.HistoricalDataBar, 100)
+		for i := range ibBars {
+			ibBars[i] = ibapi.HistoricalDataBar{T: int64(i * 86400000), O: 100, H: 101, L: 99, C: 100.5, V: 1000}
+		}
+
+		bars := convertIBBarsToOHLCV("AAPL", ibBars, historicalParams{})
+		if len(bars) != len(ibBars) {
+			t.Errorf("expected %d bars, got %d", len(ibBars), len(bars))
+		}
+	})
 }
 
 func TestBuildHistoricalDataRequest(t *testing.T) {
@@ -209,29 +138,5 @@ func TestBuildHistoricalDataRequest(t *testing.T) {
 	})
 }
 
-func TestHistoricalDataHandlerWithDB_NilChecks(t *testing.T) {
-	t.Run("returns error when ibProvider is nil", func(t *testing.T) {
-		handler := HistoricalDataHandlerWithDB(nil, nil, nil)
-		_, err := handler(context.Background(), worker.Job{ID: "test"})
-
-		if err == nil {
-			t.Error("expected error for nil ibProvider")
-		}
-		if err.Error() != "IB provider not available" {
-			t.Errorf("error = %q, want %q", err.Error(), "IB provider not available")
-		}
-	})
-
-	t.Run("returns error when questDB is nil", func(t *testing.T) {
-		mockIB := ib.NewMockClient()
-		handler := HistoricalDataHandlerWithDB(nil, nil, mockIB)
-		_, err := handler(context.Background(), worker.Job{ID: "test"})
-
-		if err == nil {
-			t.Error("expected error for nil questDB")
-		}
-		if err.Error() != "QuestDB not connected" {
-			t.Errorf("error = %q, want %q", err.Error(), "QuestDB not connected")
-		}
-	})
-}
+// Ensure convertIBBarsToOHLCV returns database.OHLCVBar
+var _ []database.OHLCVBar

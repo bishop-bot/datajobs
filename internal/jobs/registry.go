@@ -6,6 +6,7 @@ import (
 	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/ingestion"
 	jobingestion "github.com/bishop-bot/datajobs/internal/jobs/ingestion"
+	"github.com/bishop-bot/datajobs/internal/jobs/historical"
 	jobquestdb "github.com/bishop-bot/datajobs/internal/jobs/questdb"
 	"github.com/bishop-bot/datajobs/internal/jobs/system"
 	ibproviders "github.com/bishop-bot/datajobs/internal/jobs/providers"
@@ -78,6 +79,6 @@ func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqlit
 
 	// Register historical data handler with IB provider
 	if questDB != nil && sqliteDB != nil {
-		pool.RegisterHandler("historical_data", ibproviders.HistoricalDataHandlerWithDB(questDB, sqliteDB, ibProvider))
+		pool.RegisterHandler("historical_data", historical.HistoricalDataHandlerWithDB(questDB, sqliteDB, ibProvider))
 	}
 }
