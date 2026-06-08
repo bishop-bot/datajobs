@@ -1,21 +1,35 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
-	"github.com/bishop-bot/datajobs/internal/scheduler"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 
+// SchedulerRunner defines the interface for triggering job execution.
+type SchedulerRunner interface {
+	RunNow(ctx context.Context, jobID string, metadata map[string]interface{}) error
+	ListJobs() []JobInfo
+	GetJob(jobID string) (JobInfo, bool)
+}
+
+// JobInfo represents basic job information.
+type JobInfo struct {
+	ID   string
+	Name string
+}
+
 // SystemHandler handles system/monitoring endpoints.
 type SystemHandler struct {
-	scheduler *scheduler.Scheduler
+	scheduler SchedulerRunner
 	pool      *worker.Pool
 }
 
 // NewSystemHandler creates a new system handler.
-func NewSystemHandler(sched *scheduler.Scheduler, pool *worker.Pool) *SystemHandler {
+func NewSystemHandler(sched SchedulerRunner, pool *worker.Pool) *SystemHandler {
 	return &SystemHandler{
 		scheduler: sched,
 		pool:      pool,
@@ -23,10 +37,25 @@ func NewSystemHandler(sched *scheduler.Scheduler, pool *worker.Pool) *SystemHand
 }
 
 // RunJob handles POST /api/v1/jobs/:id/run.
+// Optionally accepts a JSON body with runtime metadata parameters.
+// The metadata is passed directly to the job handler, which interprets
+// fields as needed (e.g., "instruments", "period", "bar" for historical_data).
 func (h *SystemHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("id")
 
-	if err := h.scheduler.RunNow(r.Context(), jobID); err != nil {
+	// Parse body as raw metadata (empty map if no body)
+	metadata := make(map[string]interface{})
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&metadata); err != nil {
+			respondJSON(w, http.StatusBadRequest, Response{
+				Success: false,
+				Error:   "invalid JSON body: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	if err := h.scheduler.RunNow(r.Context(), jobID, metadata); err != nil {
 		respondJSON(w, http.StatusNotFound, Response{
 			Success: false,
 			Error:   err.Error(),
@@ -40,6 +69,7 @@ func (h *SystemHandler) RunJob(w http.ResponseWriter, r *http.Request) {
 		Data: map[string]interface{}{
 			"job_id":       jobID,
 			"triggered_at": time.Now().UTC(),
+			"metadata":     metadata,
 		},
 	})
 }

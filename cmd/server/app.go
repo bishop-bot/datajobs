@@ -307,7 +307,7 @@ func (a *App) initHealthServer() {
 func (a *App) initHTTPServer() {
 	// Initialize handlers
 	jobsHandler := handlers.NewJobsHandler(a.scheduler, a.pool)
-	systemHandler := handlers.NewSystemHandler(a.scheduler, a.pool)
+	systemHandler := handlers.NewSystemHandler(handlers.NewSchedulerAdapter(a.scheduler), a.pool)
 	questdbHandler := handlers.NewQuestDBHandler(a.questDB)
 	marketDataHandler := handlers.NewMarketDataHandler(a.pool, a.ibClient, a.sqliteDB, a.questDB)
 
