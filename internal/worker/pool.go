@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sync"
@@ -24,8 +25,23 @@ type Job struct {
 	Metadata map[string]interface{}
 	Retry    config.RetryConfig
 	Timeout  time.Duration
-	Ctx      context.Context // Carries parent context for tracing
+	Ctx      context.Context // Carries parent context for tracing (not serialized)
 	Attempt  int              // Current attempt number (0-based), persisted across retries
+}
+
+// MarshalJSON serializes Job without the Ctx field to avoid infinite recursion.
+func (j Job) MarshalJSON() ([]byte, error) {
+	// Avoid import cycle by defining a local alias
+	type jobAlias Job
+	// Create a copy without Ctx
+	alias := struct {
+		jobAlias
+		Ctx interface{} `json:"Ctx,omitempty"` // Omit Ctx entirely
+	}{
+		jobAlias: jobAlias(j),
+		Ctx:      nil, // Explicitly set to nil so it's omitted
+	}
+	return json.Marshal(alias)
 }
 
 // JobResult represents the result of a job execution.
