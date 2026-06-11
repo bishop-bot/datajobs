@@ -61,6 +61,9 @@ See `config/examples.yaml` for full configuration documentation.
 | `POST` | `/api/v1/jobs/{id}/run` | Trigger immediate run |
 | `GET` | `/api/v1/dead-letter` | View dead letter queue |
 | `GET` | `/api/v1/stats` | View server stats |
+| `GET` | `/api/v1/marketdata/instruments` | List instruments |
+| `POST` | `/api/v1/instruments/import` | Import instruments from CSV file |
+| `POST` | `/api/v1/instruments/import-path` | Import instruments from local path |
 | `GET` | `/metrics` | Prometheus metrics |
 | `GET` | `/healthz` | Liveness probe |
 | `GET` | `/readyz` | Readiness probe |
@@ -98,6 +101,52 @@ go test -cover ./...
 # Run specific package
 go test ./internal/worker/...
 ```
+
+## Instruments Import
+
+Import instrument data from CSV files into the SQLite database.
+
+### Endpoints
+
+#### Upload CSV File
+```bash
+curl -X POST http://localhost:8080/api/v1/instruments/import \
+  -F "file=@assets/XNAS.csv"
+```
+
+#### Import from Local Path
+```bash
+curl -X POST "http://localhost:8080/api/v1/instruments/import-path?path=./assets/XNAS.csv"
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "imported": 19,
+    "skipped": 0,
+    "errors": []
+  },
+  "message": "imported 19 instruments"
+}
+```
+
+### CSV Format
+
+The CSV must include these required columns:
+- `id` - Instrument identifier
+- `symbol` - Ticker symbol
+- `name` - Full name
+- `publisher` - Publisher/exchange code
+- `instrument_class` - Instrument class (e.g., "K" for stock)
+
+Optional columns: `currency`, `exchange`, `mic`, `asset`, `security_type`, `min_lot_size`, `expiration`, `max_price_variation`, `unit_of_measure_qty`, `min_price_increment`, `display_factor`, `price_display_format`, `price_ratio`, `underlying_symbol`, `maturity_year`, `maturity_month`, `maturity_day`, `group`, `tick_rule`, `strike_price`, `strike_price_currency`
+
+### Upsert Behavior
+
+Import uses `INSERT OR REPLACE`, so existing instruments with the same `id` are updated rather than duplicated.
 
 ## Built-in Job Handlers
 

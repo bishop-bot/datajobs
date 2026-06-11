@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS instruments (
     instrument_class TEXT NOT NULL,
     currency TEXT,
     exchange TEXT,
+    mic TEXT,
     asset TEXT,
     security_type TEXT,
     min_lot_size REAL,
@@ -35,5 +36,6 @@ CREATE INDEX IF NOT EXISTS idx_instruments_symbol ON instruments(symbol);
 CREATE INDEX IF NOT EXISTS idx_instruments_name ON instruments(name);
 CREATE INDEX IF NOT EXISTS idx_instruments_publisher ON instruments(publisher);
 CREATE INDEX IF NOT EXISTS idx_instruments_exchange ON instruments(exchange);
+CREATE INDEX IF NOT EXISTS idx_instruments_mic ON instruments(mic);
 CREATE INDEX IF NOT EXISTS idx_instruments_instrument_class ON instruments(instrument_class);
 CREATE INDEX IF NOT EXISTS idx_instruments_underlying_symbol ON instruments(underlying_symbol);

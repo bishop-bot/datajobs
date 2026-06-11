@@ -310,10 +310,11 @@ func (a *App) initHTTPServer() {
 	systemHandler := handlers.NewSystemHandler(handlers.NewSchedulerAdapter(a.scheduler), a.pool)
 	questdbHandler := handlers.NewQuestDBHandler(a.questDB)
 	marketDataHandler := handlers.NewMarketDataHandler(a.pool, a.ibClient, a.sqliteDB, a.questDB)
+	instrumentsHandler := handlers.NewInstrumentsHandler(a.sqliteDB)
 
 	// Setup router
 	a.router = setupRouter(a.cfg, a.healthServer, a.metrics,
-		jobsHandler, systemHandler, questdbHandler, marketDataHandler)
+		jobsHandler, systemHandler, questdbHandler, marketDataHandler, instrumentsHandler)
 
 	// Create server
 	addr := fmt.Sprintf("%s:%d", a.cfg.Server.Host, a.cfg.Server.Port)
@@ -335,6 +336,7 @@ func setupRouter(
 	systemHandler *handlers.SystemHandler,
 	questdbHandler *handlers.QuestDBHandler,
 	marketDataHandler *handlers.MarketDataHandler,
+	instrumentsHandler *handlers.InstrumentsHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -379,6 +381,10 @@ func setupRouter(
 		// Market data endpoints (IB)
 		r.Get("/marketdata/history", marketDataHandler.GetHistoricalData)
 		r.Get("/marketdata/instruments", marketDataHandler.ListInstruments)
+
+		// Instruments import endpoints
+		r.Post("/instruments/import", instrumentsHandler.ImportInstrumentsCSV)
+		r.Post("/instruments/import-path", instrumentsHandler.ImportInstrumentsFromPath)
 	})
 
 	return r

@@ -113,7 +113,7 @@ func buildInClauseQuery(conids []string) string {
 		placeholders[i] = "?"
 	}
 	return fmt.Sprintf(
-		"SELECT id, symbol, exchange, security_type FROM instruments WHERE id IN (%s)",
+		"SELECT id, symbol, name, exchange, mic, security_type FROM instruments WHERE id IN (%s)",
 		strings.Join(placeholders, ", "),
 	)
 }

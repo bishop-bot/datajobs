@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bishop-bot/datajobs/internal/config"
 	"github.com/bishop-bot/datajobs/internal/logging"
@@ -116,4 +117,85 @@ func (d *DB) RunMigrations(ctx context.Context) error {
 // Migrator returns a new Migrator instance for this database.
 func (d *DB) Migrator() *migrate.Migrator {
 	return migrate.New(d.sqlite, d.cfg.MigrationsDir)
+}
+
+// reservedKeywords contains SQL reserved keywords that need quoting.
+var reservedKeywords = map[string]bool{
+	"group":      true,
+	"order":      true,
+	"limit":      true,
+	"offset":     true,
+	"primary":    true,
+	"unique":     true,
+	"index":      true,
+	"trigger":    true,
+	"view":       true,
+	"virtual":    true,
+	"indexed":    true,
+	"if":         true,
+	"not":        true,
+	"null":       true,
+	"default":    true,
+	"foreign":    true,
+	"references": true,
+	"check":      true,
+	"constraint": true,
+}
+
+// quoteIdentifier quotes a column name if it's a reserved keyword.
+func quoteIdentifier(col string) string {
+	if reservedKeywords[col] {
+		return fmt.Sprintf("\"%s\"", col)
+	}
+	return col
+}
+
+// ImportInstrumentsBatch imports a batch of instrument records using INSERT OR REPLACE.
+// The headers slice defines column names, and rows contains the values for each row.
+func (d *DB) ImportInstrumentsBatch(ctx context.Context, headers []string, rows [][]interface{}) (int, error) {
+	if len(rows) == 0 {
+		return 0, nil
+	}
+
+	// Build the INSERT OR REPLACE statement with properly quoted column names
+	columns := make([]string, len(headers))
+	placeholders := make([]string, len(headers))
+	for i, col := range headers {
+		columns[i] = quoteIdentifier(col)
+		placeholders[i] = "?"
+	}
+
+	query := fmt.Sprintf(
+		"INSERT OR REPLACE INTO instruments (%s) VALUES (%s)",
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "),
+	)
+
+	// Execute within transaction for performance
+	tx, err := d.BeginTx(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	imported := 0
+	for _, row := range rows {
+		_, err := stmt.ExecContext(ctx, row...)
+		if err != nil {
+			return imported, fmt.Errorf("failed to insert row: %w", err)
+		}
+		imported++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return imported, nil
 }
