@@ -2,7 +2,7 @@
 -- Version: 005
 
 CREATE TABLE IF NOT EXISTS instruments (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     symbol TEXT NOT NULL,
     name TEXT NOT NULL,
     publisher TEXT NOT NULL,
