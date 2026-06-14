@@ -44,7 +44,7 @@ func TestInstrument(t *testing.T) {
 func TestBuildInClauseQuery(t *testing.T) {
 	t.Run("single conid", func(t *testing.T) {
 		query := buildInClauseQuery([]string{"123"})
-		expected := "SELECT id, symbol, name, exchange, mic, security_type FROM instruments WHERE id IN (?)"
+		expected := "SELECT id, symbol, exchange, security_type FROM instruments WHERE id IN (?)"
 		if query != expected {
 			t.Errorf("query = %q, want %q", query, expected)
 		}
@@ -52,14 +52,14 @@ func TestBuildInClauseQuery(t *testing.T) {
 
 	t.Run("multiple conids", func(t *testing.T) {
 		query := buildInClauseQuery([]string{"123", "456", "789"})
-		if query != "SELECT id, symbol, name, exchange, mic, security_type FROM instruments WHERE id IN (?, ?, ?)" {
+		if query != "SELECT id, symbol, exchange, security_type FROM instruments WHERE id IN (?, ?, ?)" {
 			t.Errorf("unexpected query: %s", query)
 		}
 	})
 
 	t.Run("empty conids", func(t *testing.T) {
 		query := buildInClauseQuery([]string{})
-		if query != "SELECT id, symbol, name, exchange, mic, security_type FROM instruments WHERE id IN ()" {
+		if query != "SELECT id, symbol, exchange, security_type FROM instruments WHERE id IN ()" {
 			t.Errorf("unexpected query: %s", query)
 		}
 	})

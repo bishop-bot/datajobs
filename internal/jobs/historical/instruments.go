@@ -107,13 +107,14 @@ func scanInstruments(rows *sql.Rows) ([]instrument, error) {
 }
 
 // buildInClauseQuery builds a SELECT query with IN clause for conids.
+// Returns only the columns needed by the instrument struct: id, symbol, exchange, security_type.
 func buildInClauseQuery(conids []string) string {
 	placeholders := make([]string, len(conids))
 	for i := range conids {
 		placeholders[i] = "?"
 	}
 	return fmt.Sprintf(
-		"SELECT id, symbol, name, exchange, mic, security_type FROM instruments WHERE id IN (%s)",
+		"SELECT id, symbol, exchange, security_type FROM instruments WHERE id IN (%s)",
 		strings.Join(placeholders, ", "),
 	)
 }
