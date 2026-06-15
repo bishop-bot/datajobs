@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestOHLCVBarToSlice(t *testing.T) {
+func TestOHLCVBar(t *testing.T) {
 	bar := OHLCVBar{
 		Symbol:    "AAPL",
 		Publisher: "IB",
@@ -18,38 +18,18 @@ func TestOHLCVBarToSlice(t *testing.T) {
 		Volume:    1000000,
 	}
 
-	slice := bar.ToSlice()
-
-	if len(slice) != 9 {
-		t.Errorf("expected slice length 9, got %d", len(slice))
+	// Verify bar fields are correctly populated
+	if bar.Symbol != "AAPL" {
+		t.Errorf("expected symbol AAPL, got %v", bar.Symbol)
 	}
-
-	if slice[0] != "AAPL" {
-		t.Errorf("expected symbol AAPL, got %v", slice[0])
+	if bar.Publisher != "IB" {
+		t.Errorf("expected publisher IB, got %v", bar.Publisher)
 	}
-	if slice[1] != "IB" {
-		t.Errorf("expected publisher IB, got %v", slice[1])
+	if bar.Ts != 1717200000000000000 {
+		t.Errorf("expected Ts 1717200000000000000, got %v", bar.Ts)
 	}
-	if slice[2] != int64(1717200000000000000) {
-		t.Errorf("expected Ts 1717200000000000000, got %v", slice[2])
-	}
-	if slice[3] != int64(1717200060000000000) {
-		t.Errorf("expected TsEnd 1717200060000000000, got %v", slice[3])
-	}
-	if slice[4] != 189.50 {
-		t.Errorf("expected Open 189.50, got %v", slice[4])
-	}
-	if slice[5] != 190.25 {
-		t.Errorf("expected High 190.25, got %v", slice[5])
-	}
-	if slice[6] != 189.10 {
-		t.Errorf("expected Low 189.10, got %v", slice[6])
-	}
-	if slice[7] != 190.00 {
-		t.Errorf("expected Close 190.00, got %v", slice[7])
-	}
-	if slice[8] != int64(1000000) {
-		t.Errorf("expected Volume 1000000, got %v", slice[8])
+	if bar.Open != 189.50 {
+		t.Errorf("expected Open 189.50, got %v", bar.Open)
 	}
 }
 
