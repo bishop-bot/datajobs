@@ -198,6 +198,11 @@ func (q *QuestDB) UpsertOHLCVBars(ctx context.Context, bars []OHLCVBar) (*OHLCVU
 		return &OHLCVUpsertResult{RowsAffected: 0}, nil
 	}
 
+	if q == nil {
+		logging.Error("QuestDB is nil in UpsertOHLCVBars")
+		return nil, fmt.Errorf("QuestDB is nil")
+	}
+
 	start := time.Now()
 	result := &OHLCVUpsertResult{}
 
@@ -230,8 +235,18 @@ func (q *QuestDB) UpsertOHLCVBars(ctx context.Context, bars []OHLCVBar) (*OHLCVU
 			volume = EXCLUDED.volume
 	`, strings.Join(columns, ", "), strings.Join(placeholders, ", "))
 
+	logging.Debug("executing OHLCV upsert",
+		"query", query,
+		"values_count", len(values),
+		"bars_count", len(bars),
+	)
+
 	rows, err := q.pool.Exec(ctx, query, values...)
 	if err != nil {
+		logging.Error("QuestDB exec failed",
+			"query", query,
+			"error", err.Error(),
+		)
 		return nil, fmt.Errorf("failed to upsert OHLCV bars: %w", err)
 	}
 

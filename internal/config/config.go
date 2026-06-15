@@ -62,9 +62,9 @@ type QuestDBConfig struct {
 
 // IBConfig holds Interactive Brokers Web API settings.
 type IBConfig struct {
-	BaseURL           string        `yaml:"baseURL" env:"IB_BASE_URL"`
-	InsecureSkipVerify bool        `yaml:"insecureSkipVerify" env:"IB_INSECURE_SKIP_VERIFY"`
-	Timeout           time.Duration `yaml:"timeout" env:"IB_TIMEOUT"`
+	BaseURL            string        `yaml:"baseURL" env:"IB_BASE_URL"`
+	InsecureSkipVerify bool          `yaml:"insecureSkipVerify" env:"IB_INSECURE_SKIP_VERIFY"`
+	Timeout            time.Duration `yaml:"timeout" env:"IB_TIMEOUT"`
 
 	// Authentication settings
 	Username           string `yaml:"username" env:"IB_USERNAME"`
@@ -90,7 +90,7 @@ type JobConfig struct {
 type RetryConfig struct {
 	MaxAttempts  int     `yaml:"maxAttempts" env:"JOB_RETRY_MAX_ATTEMPTS"`
 	InitialDelay int     `yaml:"initialDelay" env:"JOB_RETRY_INITIAL_DELAY"` // milliseconds
-	MaxDelay     int     `yaml:"maxDelay" env:"JOB_RETRY_MAX_DELAY"`        // milliseconds
+	MaxDelay     int     `yaml:"maxDelay" env:"JOB_RETRY_MAX_DELAY"`         // milliseconds
 	Multiplier   float64 `yaml:"multiplier" env:"JOB_RETRY_MULTIPLIER"`
 }
 

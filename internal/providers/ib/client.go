@@ -246,14 +246,32 @@ func (c *Client) HistoricalData(ctx context.Context, req HistoricalDataRequest) 
 		return nil, ErrClientClosed
 	}
 
-	logging.Debug("fetching historical data",
+	if c.authenticator == nil {
+		logging.Warn("IB HistoricalData called without authenticator - request may fail if gateway requires auth")
+	}
+
+	logging.Info("fetching historical data from IB",
 		"conid", req.Conid,
 		"exchange", req.Exchange,
 		"period", req.Period,
 		"bar", req.Bar,
+		"baseURL", c.cfg.BaseURL,
 	)
 
-	return c.client.MarketData().HistoricalData(ctx, req.ToIBRequest())
+	resp, err := c.client.MarketData().HistoricalData(ctx, req.ToIBRequest())
+	if err != nil {
+		logging.Error("IB HistoricalData request failed",
+			"conid", req.Conid,
+			"exchange", req.Exchange,
+			"period", req.Period,
+			"bar", req.Bar,
+			"error", err.Error(),
+			"baseURL", c.cfg.BaseURL,
+		)
+		return nil, err
+	}
+
+	return resp, nil
 }
 
 // HistoricalDataRequest wraps ibapi.HistoricalDataRequest with helper constructors.

@@ -6,9 +6,10 @@ import (
 	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/ingestion"
 	jobingestion "github.com/bishop-bot/datajobs/internal/jobs/ingestion"
+	"github.com/bishop-bot/datajobs/internal/jobs/historical"
+	"github.com/bishop-bot/datajobs/internal/jobs/monitoring"
 	jobquestdb "github.com/bishop-bot/datajobs/internal/jobs/questdb"
 	"github.com/bishop-bot/datajobs/internal/jobs/system"
-	ibproviders "github.com/bishop-bot/datajobs/internal/jobs/providers"
 	"github.com/bishop-bot/datajobs/internal/providers/ib"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
@@ -73,11 +74,11 @@ func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqlit
 
 	// Register IB ping handler if provider is available
 	if ibProvider != nil {
-		pool.RegisterHandler("ib_ping", ibproviders.PingHandler(ibProvider))
+		pool.RegisterHandler("ib_ping", monitoring.PingHandler(ibProvider))
 	}
 
 	// Register historical data handler with IB provider
 	if questDB != nil && sqliteDB != nil {
-		pool.RegisterHandler("historical_data", ibproviders.HistoricalDataHandlerWithDB(questDB, sqliteDB, ibProvider))
+		pool.RegisterHandler("historical_data", historical.HistoricalDataHandlerWithDB(questDB, sqliteDB, ibProvider))
 	}
 }

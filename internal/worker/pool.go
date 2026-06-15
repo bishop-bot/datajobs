@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sync"
@@ -24,8 +25,23 @@ type Job struct {
 	Metadata map[string]interface{}
 	Retry    config.RetryConfig
 	Timeout  time.Duration
-	Ctx      context.Context // Carries parent context for tracing
+	Ctx      context.Context // Carries parent context for tracing (not serialized)
 	Attempt  int              // Current attempt number (0-based), persisted across retries
+}
+
+// MarshalJSON serializes Job without the Ctx field to avoid infinite recursion.
+func (j Job) MarshalJSON() ([]byte, error) {
+	// Avoid import cycle by defining a local alias
+	type jobAlias Job
+	// Create a copy without Ctx
+	alias := struct {
+		jobAlias
+		Ctx interface{} `json:"Ctx,omitempty"` // Omit Ctx entirely
+	}{
+		jobAlias: jobAlias(j),
+		Ctx:      nil, // Explicitly set to nil so it's omitted
+	}
+	return json.Marshal(alias)
 }
 
 // JobResult represents the result of a job execution.
@@ -182,16 +198,21 @@ func (p *Pool) Submit(ctx context.Context, job Job) error {
 
 // executeJob processes a single job with retry support.
 func (p *Pool) executeJob(job Job, attempt int) {
-	// Use parent context from job if available, otherwise create new root span
-	parentCtx := job.Ctx
-	if parentCtx == nil {
-		parentCtx = context.Background()
-	}
+	// Create a fresh context for this job execution that is completely
+	// independent of the caller's context (e.g., HTTP request context).
+	// The job should run to completion or timeout based on job.Timeout,
+	// NOT based on how the job was triggered.
+	//
+	// Key: we NEVER inherit the caller's context to prevent:
+	// - HTTP request timeout from killing long-running jobs
+	// - Caller cancellation from affecting job execution
+	// - Context inheritance issues during retry
+	jobCtx := context.Background()
 
 	// Use job.Attempt for span attributes (persists across retries)
 	attemptNum := job.Attempt
 
-	ctx, span := tracing.Tracer().Start(parentCtx, "job.execute",
+	ctx, span := tracing.Tracer().Start(jobCtx, "job.execute",
 		trace.WithAttributes(
 			attribute.String("job.id", job.ID),
 			attribute.String("job.type", job.Type),
@@ -215,18 +236,19 @@ func (p *Pool) executeJob(job Job, attempt int) {
 		return
 	}
 
-	// Create job context with timeout
-	jobCtx, cancel := context.WithTimeout(ctx, job.Timeout)
-	defer cancel()
+	// Create a timeout context for the job execution
+	// This is the ONLY way the job should time out
+	execCtx, cancelExec := context.WithTimeout(ctx, job.Timeout)
+	defer cancelExec()
 
 	// Record metrics
 	done := p.metrics.RecordJobStart(ctx, job.ID)
 	defer done()
 
-	logger.Info("job started", "handler", job.Handler)
+	logger.Info("job started", "handler", job.Handler, "timeout_seconds", job.Timeout.Seconds())
 
-	// Execute handler
-	output, err := handler(jobCtx, job)
+	// Execute handler with the timeout context
+	output, err := handler(execCtx, job)
 
 	// Update metrics
 	if err != nil {
@@ -237,28 +259,36 @@ func (p *Pool) executeJob(job Job, attempt int) {
 		if job.Attempt < job.Retry.MaxAttempts-1 {
 			backoff := calculateBackoff(job.Retry, job.Attempt)
 
-			logger.Info("scheduling retry", "next_attempt", job.Attempt+2, "backoff", backoff)
+			logger.Info("scheduling retry", "next_attempt", job.Attempt+2, "backoff_ms", backoff.Milliseconds())
 			p.metrics.RecordJobRetry(ctx, job.ID)
 
 			// Sleep for backoff using timer for proper cleanup
-			// Check parent context (not span context) for cancellation
-			timer := time.NewTimer(backoff)
+			// Use a fresh context for the backoff delay - the job should
+			// continue even if the original caller cancelled their context
+			backoffCtx, cancelBackoff := context.WithTimeout(context.Background(), backoff)
 			select {
-			case <-timer.C:
+			case <-backoffCtx.Done():
 				// Backoff complete, proceed to re-queue
-			case <-parentCtx.Done():
-				timer.Stop()
-				logger.Warn("retry cancelled due to parent context", "job_id", job.ID)
-				p.sendToDeadLetter(ctx, job, "parent_context_cancelled", parentCtx.Err().Error())
-				return
+			case <-ctx.Done():
+				cancelBackoff()
+				// Only cancel if the job context itself timed out or was cancelled
+				// This indicates the job exceeded its timeout, not that caller cancelled
+				if ctx.Err() == context.DeadlineExceeded {
+					logger.Warn("job timed out during backoff wait", "job_id", job.ID)
+					p.sendToDeadLetter(ctx, job, "job_timeout", "job execution exceeded timeout")
+					return
+				}
+				// For any other cancellation, continue with retry
+				logger.Warn("continuing retry despite context cancellation", "job_id", job.ID, "reason", ctx.Err())
 			}
+			cancelBackoff()
 
 			// Increment attempt before re-queuing so worker sees updated value
 			job.Attempt++
 
-			// Re-queue the job (bounded by channel capacity)
-			// Propagate current context through channel for span continuity
-			job.Ctx = ctx
+			// Re-queue the job with fresh context
+			// Use context.Background() so job isn't tied to caller's lifecycle
+			job.Ctx = context.Background()
 
 			// Use non-blocking send with recover to handle race between isRunning check and send
 			defer func() {
@@ -308,20 +338,14 @@ func (p *Pool) sendToDeadLetter(ctx context.Context, job Job, reason, errMsg str
 		Reason:   reason,
 	}
 
-	p.deadLetterMu.Lock()
-	if len(p.deadLetterQ) > MaxDeadLetterSize {
-		// Trim to max when exceeding
-		keep := MaxDeadLetterSize / 2
-		p.deadLetterQ = p.deadLetterQ[len(p.deadLetterQ)-keep:]
-	}
-	p.deadLetterQ = append(p.deadLetterQ, dl)
-	p.deadLetterMu.Unlock()
-
+	// Send to channel for async processing
+	// processDeadLetter() will add to deadLetterQ
 	select {
 	case p.deadLetter <- dl:
 		p.metrics.RecordDeadLetter(ctx, job.ID, reason)
 	default:
-		// Channel full or closed, already stored in slice
+		// Channel full or closed, still record metric
+		p.metrics.RecordDeadLetter(ctx, job.ID, reason)
 	}
 }
 

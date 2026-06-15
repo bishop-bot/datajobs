@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -104,7 +105,7 @@ func (s *Scheduler) AddJob(cfg config.JobConfig) error {
 
 	if job.Enabled && job.Cron != "" {
 		_, err := s.cron.AddFunc(job.Cron, func() {
-			s.executeJob(context.Background(), job)
+			s.executeJob(context.Background(), job, nil)
 		})
 		if err != nil {
 			s.mu.Unlock()
@@ -124,7 +125,9 @@ func (s *Scheduler) AddJob(cfg config.JobConfig) error {
 }
 
 // RunNow triggers immediate execution of a job.
-func (s *Scheduler) RunNow(ctx context.Context, jobID string) error {
+// The metadata parameter allows passing runtime parameters to the job handler.
+// For scheduled runs (triggered by cron), pass nil as metadata.
+func (s *Scheduler) RunNow(ctx context.Context, jobID string, metadata map[string]interface{}) error {
 	s.mu.RLock()
 	job, ok := s.jobs[jobID]
 	s.mu.RUnlock()
@@ -133,13 +136,24 @@ func (s *Scheduler) RunNow(ctx context.Context, jobID string) error {
 		return ErrJobNotFound
 	}
 
-	go s.executeJob(ctx, job)
+	go s.executeJob(ctx, job, metadata)
 	return nil
 }
 
 // executeJob executes a job through the worker pool.
-func (s *Scheduler) executeJob(ctx context.Context, job Job) {
+// The metadata parameter contains runtime parameters passed from the API.
+// For scheduled runs (triggered by cron), metadata will be nil.
+func (s *Scheduler) executeJob(ctx context.Context, job Job, metadata map[string]interface{}) {
 	logger := logging.FromContext(ctx).With("job_id", job.ID)
+
+	// Determine metadata: use passed metadata or empty map for scheduled runs
+	jobMetadata := metadata
+	if jobMetadata == nil {
+		jobMetadata = make(map[string]interface{})
+	} else {
+		logger.Info("triggering job with runtime metadata", "metadata_keys", fmt.Sprintf("%v", mapKeys(jobMetadata)))
+	}
+
 	logger.Info("triggering scheduled job", "cron", job.Cron)
 
 	// Start tracing span
@@ -156,7 +170,7 @@ func (s *Scheduler) executeJob(ctx context.Context, job Job) {
 		ID:       job.ID,
 		Type:     job.Type,
 		Handler:  job.Handler,
-		Metadata: make(map[string]interface{}),
+		Metadata: jobMetadata,
 		Retry:    sanitizeRetryConfig(job.Retry),
 		Timeout:  job.Timeout,
 	}
@@ -164,6 +178,15 @@ func (s *Scheduler) executeJob(ctx context.Context, job Job) {
 	if err := s.pool.Submit(ctx, wjob); err != nil {
 		logger.Error("failed to submit job", "error", err)
 	}
+}
+
+// mapKeys returns the keys of a map as a slice of strings.
+func mapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // ListJobs returns all registered jobs.
