@@ -15,6 +15,12 @@ func upsertOHLCVBatches(ctx context.Context, questDB *database.QuestDB, symbol s
 		return fmt.Errorf("QuestDB not connected")
 	}
 
+	// Ensure the ohlcv_bars table exists
+	if err := questDB.EnsureTableOHLCV(ctx); err != nil {
+		logging.Error("failed to ensure ohlcv_bars table", "symbol", symbol, "error", err)
+		return fmt.Errorf("failed to ensure ohlcv_bars table: %w", err)
+	}
+
 	logging.Info("upserting bars to QuestDB",
 		"symbol", symbol,
 		"bars_count", len(bars),
