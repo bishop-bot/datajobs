@@ -25,9 +25,9 @@ func NewQuestDB(cfg config.QuestDBConfig) (*QuestDB, error) {
 		cfg: cfg,
 	}
 
-	// HTTP ILP uses port 9000 (same as web UI) per QuestDB documentation
+	// HTTP ILP uses cfg.ILPHTTPPort (default 9000, same as web UI)
 	// TCP ILP uses cfg.ILPPort (default 9009)
-	q.httpAddr = fmt.Sprintf("%s:9000", cfg.Host)
+	q.httpAddr = fmt.Sprintf("%s:%d", cfg.Host, cfg.ILPHTTPPort)
 
 	// Create PostgreSQL connection pool for SQL queries
 	connStr := fmt.Sprintf(
@@ -80,7 +80,7 @@ func NewQuestDB(cfg config.QuestDBConfig) (*QuestDB, error) {
 
 	logging.Info("connected to QuestDB",
 		"host", cfg.Host,
-		"http_port", 9000,
+		"http_ilp_port", cfg.ILPHTTPPort,
 		"pg_port", cfg.Port,
 		"tcp_ilp_port", cfg.ILPPort,
 		"pool_size", cfg.PoolSize,
@@ -245,7 +245,15 @@ func (q *QuestDB) UpsertOHLCVBars(ctx context.Context, bars []OHLCVBar) (*OHLCVU
 
 	// Flush the buffer to ensure all data is sent
 	if err := q.lineSender.Flush(ctx); err != nil {
-		return nil, fmt.Errorf("failed to flush line sender: %w", err)
+		// Log the error but still return partial results
+		// The go-questdb-client buffers data, so if Flush fails,
+		// some rows may still have been sent successfully
+		logging.Error("QuestDB flush failed (partial results may have been sent)",
+			"rows_queued", result.RowsAffected,
+			"error", err.Error(),
+		)
+		// Include the flush error in result so caller knows about it
+		result.Errors = append(result.Errors, fmt.Sprintf("flush failed: %v", err))
 	}
 
 	result.Duration = time.Since(start)
@@ -333,7 +341,7 @@ func (q *QuestDB) GetTableColumns(ctx context.Context, table string) ([]ColumnIn
 			return nil, err
 		}
 		columns = append(columns, ColumnInfo{
-			Name:    colType,
+			Name:    name,
 			Type:    colType,
 			Indexed: indexed,
 			Signed:  signed,

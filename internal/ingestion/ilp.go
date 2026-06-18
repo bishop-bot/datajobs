@@ -15,7 +15,8 @@ import (
 	"github.com/bishop-bot/datajobs/internal/metrics"
 )
 
-// ILPClient sends data to QuestDB via the InfluxDB Line Protocol.
+// ILPClient sends data to QuestDB via the InfluxDB Line Protocol over TCP.
+// It includes connection health checking and automatic retry with exponential backoff.
 type ILPClient struct {
 	addr      string
 	user      string
@@ -25,16 +26,64 @@ type ILPClient struct {
 	connected bool
 	timeout   time.Duration
 	metrics   *metrics.Metrics
+
+	// Retry configuration
+	maxRetries    int
+	retryBaseDelay time.Duration
+	retryMaxDelay  time.Duration
 }
 
-// NewILPClient creates a new ILP client.
+// ILPClientConfig contains configuration options for ILPClient.
+type ILPClientConfig struct {
+	// Timeout for network operations (default: 30s)
+	Timeout time.Duration
+	// MaxRetries for transient failures (default: 3)
+	MaxRetries int
+	// RetryBaseDelay for exponential backoff (default: 100ms)
+	RetryBaseDelay time.Duration
+	// RetryMaxDelay caps the backoff (default: 5s)
+	RetryMaxDelay time.Duration
+}
+
+// DefaultILPClientConfig returns the default configuration.
+func DefaultILPClientConfig() ILPClientConfig {
+	return ILPClientConfig{
+		Timeout:        30 * time.Second,
+		MaxRetries:     3,
+		RetryBaseDelay: 100 * time.Millisecond,
+		RetryMaxDelay:  5 * time.Second,
+	}
+}
+
+// NewILPClient creates a new ILP client with default configuration.
 func NewILPClient(cfg config.QuestDBConfig, m *metrics.Metrics) *ILPClient {
+	return NewILPClientWithConfig(cfg, m, DefaultILPClientConfig())
+}
+
+// NewILPClientWithConfig creates a new ILP client with custom configuration.
+func NewILPClientWithConfig(cfg config.QuestDBConfig, m *metrics.Metrics, config ILPClientConfig) *ILPClient {
+	if config.Timeout == 0 {
+		config.Timeout = 30 * time.Second
+	}
+	if config.MaxRetries == 0 {
+		config.MaxRetries = 3
+	}
+	if config.RetryBaseDelay == 0 {
+		config.RetryBaseDelay = 100 * time.Millisecond
+	}
+	if config.RetryMaxDelay == 0 {
+		config.RetryMaxDelay = 5 * time.Second
+	}
+
 	return &ILPClient{
-		addr:     fmt.Sprintf("%s:%d", cfg.Host, cfg.ILPPort),
-		user:     cfg.User,
-		password: cfg.Password,
-		timeout:  30 * time.Second,
-		metrics:  m,
+		addr:           fmt.Sprintf("%s:%d", cfg.Host, cfg.ILPPort),
+		user:           cfg.User,
+		password:       cfg.Password,
+		timeout:        config.Timeout,
+		metrics:        m,
+		maxRetries:     config.MaxRetries,
+		retryBaseDelay: config.RetryBaseDelay,
+		retryMaxDelay:  config.RetryMaxDelay,
 	}
 }
 
@@ -50,8 +99,10 @@ func (c *ILPClient) Connect(ctx context.Context) error {
 // connectLocked establishes connection assuming caller holds mu.
 // Use Connect() for external callers.
 func (c *ILPClient) connectLocked(ctx context.Context) error {
-	if c.connected && c.conn != nil {
-		return nil
+	// Close existing connection if any
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
 	}
 
 	// Use dialer with context for timeout
@@ -61,6 +112,7 @@ func (c *ILPClient) connectLocked(ctx context.Context) error {
 
 	conn, err := dialer.DialContext(ctx, "tcp", c.addr)
 	if err != nil {
+		c.connected = false
 		return fmt.Errorf("failed to connect to ILP: %w", err)
 	}
 
@@ -96,8 +148,47 @@ func (c *ILPClient) Close() error {
 	return nil
 }
 
+// ping sends a ping to test the connection.
+// Returns true if the connection is healthy, false otherwise.
+func (c *ILPClient) ping() bool {
+	if c.conn == nil {
+		return false
+	}
+
+	// Set a short deadline for the ping
+	c.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+
+	// Send a newline (no-op in ILP)
+	if _, err := c.conn.Write([]byte("\n")); err != nil {
+		return false
+	}
+
+	return true
+}
+
+// testAndReconnect tests the connection and reconnects if unhealthy.
+// Must be called with mu held.
+func (c *ILPClient) testAndReconnect(ctx context.Context) error {
+	if c.conn == nil {
+		return c.connectLocked(ctx)
+	}
+
+	// Test with a ping
+	if c.ping() {
+		return nil
+	}
+
+	// Connection unhealthy, reconnect
+	logging.Debug("ILP connection unhealthy, reconnecting")
+	c.connected = false
+	c.conn.Close()
+	c.conn = nil
+
+	return c.connectLocked(ctx)
+}
+
 // ensureConnected attempts to connect if not connected.
-// Returns with mu held - caller must unlock.
+// Must be called with mu held.
 func (c *ILPClient) ensureConnected(ctx context.Context) error {
 	if c.connected && c.conn != nil {
 		return nil
@@ -338,23 +429,81 @@ func joinStrings(strs []string, sep string) string {
 	return result
 }
 
+// sendLines sends ILP lines to QuestDB with automatic retry and reconnection.
+// It tests the connection health and reconnects if necessary before sending.
 func (c *ILPClient) sendLines(ctx context.Context, lines []string) error {
+	return c.sendLinesWithRetry(ctx, lines, 0)
+}
+
+// sendLinesWithRetry sends ILP lines with retry support.
+// The attempt parameter tracks retry count (0 for initial attempt).
+func (c *ILPClient) sendLinesWithRetry(ctx context.Context, lines []string, attempt int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if err := c.ensureConnected(ctx); err != nil {
-		return err
+	// Check context before network operations
+	if ctx.Err() != nil {
+		return fmt.Errorf("context cancelled: %w", ctx.Err())
 	}
 
-	for _, line := range lines {
+	// Test connection health and reconnect if needed
+	if err := c.testAndReconnect(ctx); err != nil {
+		return fmt.Errorf("connection failed: %w", err)
+	}
+
+	// Send all lines
+	for i, line := range lines {
+		// Check context periodically
+		if i%100 == 0 && ctx.Err() != nil {
+			return fmt.Errorf("context cancelled during send: %w", ctx.Err())
+		}
+
 		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
 		if _, err := c.conn.Write([]byte(line + "\n")); err != nil {
-			c.connected = false
-			return fmt.Errorf("failed to send line: %w", err)
+			c.connected = false // Mark as disconnected
+
+			// Retry if we haven't exceeded max retries
+			if attempt < c.maxRetries {
+				delay := c.calculateBackoff(attempt)
+				logging.Warn("ILP send failed, retrying",
+					"attempt", attempt+1,
+					"max_retries", c.maxRetries,
+					"delay", delay,
+					"error", err,
+				)
+
+				// Wait before retry with backoff
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context cancelled during retry backoff: %w", ctx.Err())
+				case <-time.After(delay):
+				}
+
+				// Retry the entire batch
+				return c.sendLinesWithRetry(ctx, lines, attempt+1)
+			}
+
+			return fmt.Errorf("failed to send line (after %d retries): %w", attempt, err)
 		}
 	}
 
 	return nil
+}
+
+// calculateBackoff calculates the delay for a given retry attempt using exponential backoff.
+func (c *ILPClient) calculateBackoff(attempt int) time.Duration {
+	// Exponential backoff: base * 2^attempt
+	delay := c.retryBaseDelay
+	for i := 0; i < attempt; i++ {
+		delay *= 2
+	}
+
+	// Cap at max delay
+	if delay > c.retryMaxDelay {
+		delay = c.retryMaxDelay
+	}
+
+	return delay
 }
 
 func findColumn(header []string, name string) int {

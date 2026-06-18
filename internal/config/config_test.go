@@ -333,6 +333,9 @@ server:
 	if cfg.QuestDB.ILPPort != 9009 {
 		t.Errorf("QuestDB.ILPPort: got %d", cfg.QuestDB.ILPPort)
 	}
+	if cfg.QuestDB.ILPHTTPPort != 9000 {
+		t.Errorf("QuestDB.ILPHTTPPort: got %d", cfg.QuestDB.ILPHTTPPort)
+	}
 	if cfg.IB.Timeout != 30*time.Second {
 		t.Errorf("IB.Timeout: got %v", cfg.IB.Timeout)
 	}

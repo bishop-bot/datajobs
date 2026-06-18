@@ -213,10 +213,10 @@ func TestMultipartWriter(t *testing.T) {
 
 func TestNewHTTPClient(t *testing.T) {
 	client := NewHTTPClient(config.QuestDBConfig{
-		Host:     "localhost",
-		ILPPort:  9000,
-		User:     "admin",
-		Password: "quest",
+		Host:         "localhost",
+		ILPHTTPPort:  9000,
+		User:         "admin",
+		Password:     "quest",
 	})
 
 	if client.baseURL != "http://localhost:9000" {

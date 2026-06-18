@@ -35,9 +35,10 @@ type HTTPIngestResult struct {
 }
 
 // NewHTTPClient creates a new QuestDB HTTP client.
+// Uses the ILPHTTPPort from config (default 9000).
 func NewHTTPClient(cfg config.QuestDBConfig) *HTTPClient {
 	return &HTTPClient{
-		baseURL: fmt.Sprintf("http://%s:%d", cfg.Host, cfg.ILPPort),
+		baseURL: fmt.Sprintf("http://%s:%d", cfg.Host, cfg.ILPHTTPPort),
 		user:    cfg.User,
 		password: cfg.Password,
 		httpClient: &http.Client{
