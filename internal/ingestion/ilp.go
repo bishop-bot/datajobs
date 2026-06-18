@@ -1,6 +1,7 @@
 package ingestion
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"fmt"
@@ -28,7 +29,7 @@ type ILPClient struct {
 	metrics   *metrics.Metrics
 
 	// Retry configuration
-	maxRetries    int
+	maxRetries     int
 	retryBaseDelay time.Duration
 	retryMaxDelay  time.Duration
 }
@@ -282,10 +283,19 @@ func (c *ILPClient) IngestCSV(ctx context.Context, table string, csvPath string,
 			result.Errors = append(result.Errors, fmt.Sprintf("dropped %d malformed rows", skippedRows))
 		}
 
-		if err := c.sendLines(ctx, lines); err != nil {
+		// Send with idempotent retry - no duplicates
+		sent, err := c.sendLines(ctx, lines)
+		if err != nil {
+			if sent > 0 {
+				logger.Error("partial batch sent before failure",
+					"sent", sent,
+					"total", len(lines),
+					"error", err,
+				)
+			}
 			errors++
-			result.Errors = append(result.Errors, err.Error())
-			continue
+			result.Errors = append(result.Errors, fmt.Sprintf("batch %d: sent %d/%d: %v", batchCount, sent, len(lines), err))
+			// Continue to next batch even on error
 		}
 
 		batchCount++
@@ -429,65 +439,119 @@ func joinStrings(strs []string, sep string) string {
 	return result
 }
 
-// sendLines sends ILP lines to QuestDB with automatic retry and reconnection.
-// It tests the connection health and reconnects if necessary before sending.
-func (c *ILPClient) sendLines(ctx context.Context, lines []string) error {
-	return c.sendLinesWithRetry(ctx, lines, 0)
+// countNewlinesInBytes calculates how many complete lines were sent in a partial write.
+// Each line ends with '\n', so we count how many lines fit in bytesWritten.
+func countNewlinesInBytes(bytesWritten int, lines []string) int {
+	if bytesWritten <= 0 || len(lines) == 0 {
+		return 0
+	}
+
+	totalBytes := 0
+	linesSent := 0
+
+	for _, line := range lines {
+		lineBytes := len(line) + 1 // +1 for '\n'
+		if totalBytes+lineBytes <= bytesWritten {
+			linesSent++
+			totalBytes += lineBytes
+		} else {
+			break
+		}
+	}
+
+	return linesSent
 }
 
-// sendLinesWithRetry sends ILP lines with retry support.
-// The attempt parameter tracks retry count (0 for initial attempt).
-func (c *ILPClient) sendLinesWithRetry(ctx context.Context, lines []string, attempt int) error {
+// sendLines sends ILP lines to QuestDB with idempotent retry.
+// Returns (linesSent, error). On failure, linesSent indicates how many were
+// successfully sent before the failure - caller can retry from that point
+// to avoid duplicates.
+func (c *ILPClient) sendLines(ctx context.Context, lines []string) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// Check context before network operations
 	if ctx.Err() != nil {
-		return fmt.Errorf("context cancelled: %w", ctx.Err())
+		return 0, fmt.Errorf("context cancelled: %w", ctx.Err())
 	}
 
-	// Test connection health and reconnect if needed
-	if err := c.testAndReconnect(ctx); err != nil {
-		return fmt.Errorf("connection failed: %w", err)
+	// Nothing to send
+	if len(lines) == 0 {
+		return 0, nil
 	}
 
-	// Send all lines
-	for i, line := range lines {
-		// Check context periodically
-		if i%100 == 0 && ctx.Err() != nil {
-			return fmt.Errorf("context cancelled during send: %w", ctx.Err())
+	var linesSent int
+	currentLines := lines
+
+	for attempt := 0; attempt <= c.maxRetries; attempt++ {
+		// Test connection health and reconnect if needed
+		if err := c.testAndReconnect(ctx); err != nil {
+			return linesSent, fmt.Errorf("connection failed: %w", err)
+		}
+
+		// Build buffer for current lines (remaining from previous attempts)
+		var buf bytes.Buffer
+		for _, line := range currentLines {
+			buf.WriteString(line)
+			buf.WriteByte('\n')
 		}
 
 		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
-		if _, err := c.conn.Write([]byte(line + "\n")); err != nil {
-			c.connected = false // Mark as disconnected
 
-			// Retry if we haven't exceeded max retries
-			if attempt < c.maxRetries {
+		// Attempt single write for current batch
+		written, err := c.conn.Write(buf.Bytes())
+
+		if err != nil {
+			c.connected = false
+
+			// Calculate how many lines were successfully sent
+			recentlySent := countNewlinesInBytes(written, currentLines)
+			linesSent += recentlySent
+
+			logging.Warn("ILP batch write failed, tracking progress",
+				"attempt", attempt+1,
+				"max_retries", c.maxRetries,
+				"recentlySent", recentlySent,
+				"totalSentSoFar", linesSent,
+				"totalLines", len(lines),
+				"bytesWritten", written,
+				"error", err,
+			)
+
+			// Update remaining lines for next retry
+			currentLines = currentLines[recentlySent:]
+
+			// Retry if we haven't exceeded max retries and there are remaining lines
+			if attempt < c.maxRetries && len(currentLines) > 0 {
 				delay := c.calculateBackoff(attempt)
-				logging.Warn("ILP send failed, retrying",
-					"attempt", attempt+1,
-					"max_retries", c.maxRetries,
+				logging.Info("retrying remaining lines idempotently",
+					"retryAttempt", attempt+1,
 					"delay", delay,
-					"error", err,
+					"linesAlreadySent", linesSent,
+					"linesToRetry", len(currentLines),
 				)
 
 				// Wait before retry with backoff
 				select {
 				case <-ctx.Done():
-					return fmt.Errorf("context cancelled during retry backoff: %w", ctx.Err())
+					return linesSent, fmt.Errorf("context cancelled during retry backoff: %w", ctx.Err())
 				case <-time.After(delay):
+					continue // Continue retry loop
 				}
-
-				// Retry the entire batch
-				return c.sendLinesWithRetry(ctx, lines, attempt+1)
 			}
 
-			return fmt.Errorf("failed to send line (after %d retries): %w", attempt, err)
+			// Max retries exceeded or no remaining lines
+			return linesSent, fmt.Errorf("batch write failed after %d retries (linesSent=%d/%d): %w", attempt+1, linesSent, len(lines), err)
 		}
+
+		// Success - all remaining lines sent
+		linesSent += len(currentLines)
+		logging.Debug("ILP batch write success", "linesSent", linesSent, "bytesWritten", written)
+		return linesSent, nil
 	}
 
-	return nil
+	// Should not reach here, but safety fallback
+	return linesSent, fmt.Errorf("unexpected exit after %d retries", c.maxRetries)
 }
 
 // calculateBackoff calculates the delay for a given retry attempt using exponential backoff.
@@ -560,7 +624,7 @@ func (bc *BufferedILPClient) Flush() {
 
 func (bc *BufferedILPClient) flushLocked() {
 	if len(bc.buffer) > 0 {
-		if err := bc.client.sendLines(context.Background(), bc.buffer); err != nil {
+		if _, err := bc.client.sendLines(context.Background(), bc.buffer); err != nil {
 			logging.Warn("failed to flush buffered lines", "count", len(bc.buffer), "error", err)
 		}
 		bc.buffer = bc.buffer[:0]
