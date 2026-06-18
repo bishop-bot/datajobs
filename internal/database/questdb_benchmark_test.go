@@ -15,8 +15,8 @@ func BenchmarkUpsertOHLCVBars(b *testing.B) {
 	// Skip if no QuestDB connection
 	cfg := config.QuestDBConfig{
 		Host:     getEnv("QUESTDB_HOST", "localhost"),
-		Port:     9000,
-		ILPPort:  9009,
+		Port:     8812, // PostgreSQL port
+		ILPPort:  9009, // TCP ILP port (not used for HTTP)
 		User:     getEnv("QUESTDB_USER", "admin"),
 		Password: getEnv("QUESTDB_PASSWORD", "quest"),
 		Database: getEnv("QUESTDB_DATABASE", "qdb"),
@@ -49,8 +49,8 @@ func BenchmarkUpsertOHLCVBars(b *testing.B) {
 func BenchmarkUpsertOHLCVBars_VaryingSize(b *testing.B) {
 	cfg := config.QuestDBConfig{
 		Host:     getEnv("QUESTDB_HOST", "localhost"),
-		Port:     9000,
-		ILPPort:  9009,
+		Port:     8812, // PostgreSQL port
+		ILPPort:  9009, // TCP ILP port (not used for HTTP)
 		User:     getEnv("QUESTDB_USER", "admin"),
 		Password: getEnv("QUESTDB_PASSWORD", "quest"),
 		Database: getEnv("QUESTDB_DATABASE", "qdb"),

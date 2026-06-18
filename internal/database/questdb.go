@@ -17,16 +17,17 @@ type QuestDB struct {
 	lineSender qdb.LineSender
 	cfg        config.QuestDBConfig
 	httpAddr   string
-	ilpAddr    string
 }
 
 // NewQuestDB creates a new QuestDB connection pool and line sender.
 func NewQuestDB(cfg config.QuestDBConfig) (*QuestDB, error) {
 	q := &QuestDB{
-		cfg:     cfg,
-		httpAddr: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		ilpAddr:  fmt.Sprintf("%s:%d", cfg.Host, cfg.ILPPort),
+		cfg: cfg,
 	}
+
+	// HTTP ILP uses port 9000 (same as web UI) per QuestDB documentation
+	// TCP ILP uses cfg.ILPPort (default 9009)
+	q.httpAddr = fmt.Sprintf("%s:9000", cfg.Host)
 
 	// Create PostgreSQL connection pool for SQL queries
 	connStr := fmt.Sprintf(
@@ -65,10 +66,10 @@ func NewQuestDB(cfg config.QuestDBConfig) (*QuestDB, error) {
 		return nil, fmt.Errorf("failed to ping QuestDB: %w", err)
 	}
 
-	// Create line sender for ingestion
+	// Create line sender for ingestion (HTTP transport uses same port as web UI)
 	lineSender, err := qdb.NewLineSender(ctx,
 		qdb.WithHttp(),
-		qdb.WithAddress(q.ilpAddr),
+		qdb.WithAddress(q.httpAddr),
 		qdb.WithBasicAuth(cfg.User, cfg.Password),
 	)
 	if err != nil {
@@ -79,8 +80,9 @@ func NewQuestDB(cfg config.QuestDBConfig) (*QuestDB, error) {
 
 	logging.Info("connected to QuestDB",
 		"host", cfg.Host,
-		"http_port", cfg.Port,
-		"ilp_port", cfg.ILPPort,
+		"http_port", 9000,
+		"pg_port", cfg.Port,
+		"tcp_ilp_port", cfg.ILPPort,
 		"pool_size", cfg.PoolSize,
 	)
 
@@ -97,10 +99,7 @@ func (q *QuestDB) LineSender() qdb.LineSender {
 	return q.lineSender
 }
 
-// ILPAddr returns the ILP address for ingestion.
-func (q *QuestDB) ILPAddr() string {
-	return q.ilpAddr
-}
+
 
 // Close closes the connection pool and line sender.
 func (q *QuestDB) Close() {

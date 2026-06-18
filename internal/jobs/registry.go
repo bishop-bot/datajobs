@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/ingestion"
@@ -80,5 +81,7 @@ func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqlit
 	// Register historical data handler with IB provider
 	if questDB != nil && sqliteDB != nil {
 		pool.RegisterHandler("historical_data", historical.HistoricalDataHandlerWithDB(questDB, sqliteDB, ibProvider))
+	} else {
+		fmt.Printf("WARNING: historical_data handler not registered (questDB=%v, sqliteDB=%v)\n", questDB == nil, sqliteDB == nil)
 	}
 }
