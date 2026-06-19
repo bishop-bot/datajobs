@@ -116,6 +116,7 @@ func (h *MarketDataHandler) DownloadHistoricalData(
 		bars = append(bars, database.OHLCVBar{
 			Symbol:    ibData.Symbol,
 			Publisher: publisher,
+			BarSize:   bar,
 			Ts:        ts,
 			TsEnd:     ts + ingestion.BarDurationNs(bar),
 			Open:      ibBar.O,
@@ -205,7 +206,7 @@ func (h *MarketDataHandler) GetHistoricalData(w http.ResponseWriter, r *http.Req
 
 	bar := r.URL.Query().Get("bar")
 	if bar == "" {
-		bar = "5mins"
+		bar = "5min"
 	}
 
 	startTime := r.URL.Query().Get("startTime")

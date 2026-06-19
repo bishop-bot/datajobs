@@ -173,6 +173,8 @@ type OHLCVBar struct {
 	Symbol string `json:"symbol"`
 	// Publisher is the data source/publisher (e.g., "IB", "NASDAQ")
 	Publisher string `json:"publisher"`
+	// BarSize is the bar interval (e.g., "1min", "5mins", "1hour", "1day")
+	BarSize string `json:"bar_size"`
 	// Ts is the bar start timestamp (nanoseconds since epoch)
 	Ts int64 `json:"ts"`
 	// TsEnd is the bar end timestamp (nanoseconds since epoch)
@@ -191,7 +193,7 @@ type OHLCVBar struct {
 
 // OHLCVColumns returns the column names for the ohlcv_bars table.
 func OHLCVColumns() []string {
-	return []string{"symbol", "publisher", "ts", "ts_end", "open", "high", "low", "close", "volume"}
+	return []string{"symbol", "publisher", "bar_size", "ts", "ts_end", "open", "high", "low", "close", "volume"}
 }
 
 // OHLCVUpsertResult contains the result of an upsert operation.
@@ -224,6 +226,7 @@ func (q *QuestDB) UpsertOHLCVBars(ctx context.Context, bars []OHLCVBar) (*OHLCVU
 		err := q.lineSender.Table("ohlcv_bars").
 			Symbol("symbol", bar.Symbol).
 			Symbol("publisher", bar.Publisher).
+			Symbol("bar_size", bar.BarSize).
 			TimestampColumn("ts_end", tsEnd).
 			Float64Column("open", bar.Open).
 			Float64Column("high", bar.High).
@@ -274,6 +277,7 @@ func (q *QuestDB) EnsureTableOHLCV(ctx context.Context) error {
 		CREATE TABLE IF NOT EXISTS ohlcv_bars (
 			symbol    SYMBOL,
 			publisher SYMBOL,
+			bar_size  SYMBOL,
 			ts        TIMESTAMP,
 			ts_end    TIMESTAMP,
 			open      DOUBLE,

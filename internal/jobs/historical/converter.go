@@ -37,14 +37,16 @@ func convertIBBarsToOHLCV(symbol string, ibBars []ibapi.HistoricalDataBar, param
 		return nil
 	}
 
+	barSize := params.Bar
 	bars := make([]database.OHLCVBar, 0, len(ibBars))
 	for _, ibBar := range ibBars {
 		ts := ibBar.T * 1_000_000
 		bars = append(bars, database.OHLCVBar{
 			Symbol:    symbol,
 			Publisher: defaultPublisher,
+			BarSize:   barSize,
 			Ts:        ts,
-			TsEnd:     ts + ingestion.BarDurationNs(params.Bar),
+			TsEnd:     ts + ingestion.BarDurationNs(barSize),
 			Open:      ibBar.O,
 			High:      ibBar.H,
 			Low:       ibBar.L,

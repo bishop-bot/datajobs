@@ -36,7 +36,7 @@ func TestOHLCVBar(t *testing.T) {
 func TestOHLCVColumns(t *testing.T) {
 	columns := OHLCVColumns()
 
-	expected := []string{"symbol", "publisher", "ts", "ts_end", "open", "high", "low", "close", "volume"}
+	expected := []string{"symbol", "publisher", "bar_size", "ts", "ts_end", "open", "high", "low", "close", "volume"}
 	if len(columns) != len(expected) {
 		t.Fatalf("expected %d columns, got %d", len(expected), len(columns))
 	}
