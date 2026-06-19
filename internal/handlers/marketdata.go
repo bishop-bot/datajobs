@@ -13,20 +13,6 @@ import (
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 
-// Instrument represents an instrument record from the database.
-type Instrument struct {
-	ID              string `json:"id"`
-	Symbol          string `json:"symbol"`
-	Name            string `json:"name"`
-	Publisher       string `json:"publisher"`
-	InstrumentClass string `json:"instrument_class"`
-	Currency        string `json:"currency"`
-	Exchange        string `json:"exchange"`
-	Asset           string `json:"asset"`
-	SecurityType    string `json:"security_type"`
-	Group           string `json:"group"`
-}
-
 // MarketDataHandler handles market data endpoints.
 type MarketDataHandler struct {
 	pool       *worker.Pool
