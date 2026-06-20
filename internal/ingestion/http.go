@@ -35,9 +35,10 @@ type HTTPIngestResult struct {
 }
 
 // NewHTTPClient creates a new QuestDB HTTP client.
+// Uses the ILPHTTPPort from config (default 9000).
 func NewHTTPClient(cfg config.QuestDBConfig) *HTTPClient {
 	return &HTTPClient{
-		baseURL: fmt.Sprintf("http://%s:%d", cfg.Host, cfg.ILPPort),
+		baseURL: fmt.Sprintf("http://%s:%d", cfg.Host, cfg.ILPHTTPPort),
 		user:    cfg.User,
 		password: cfg.Password,
 		httpClient: &http.Client{
@@ -300,12 +301,12 @@ func (m *multipartWriter) Close() {
 }
 
 // barsToCSV converts OHLCV bars to CSV format.
-// Header: symbol,publisher,ts,ts_end,open,high,low,close,volume
+// Header: symbol,publisher,bar_size,ts,ts_end,open,high,low,close,volume
 func barsToCSV(bars []database.OHLCVBar) ([]byte, error) {
 	buf := &bytes.Buffer{}
 
 	// Write header
-	buf.WriteString("symbol,publisher,ts,ts_end,open,high,low,close,volume\n")
+	buf.WriteString("symbol,publisher,bar_size,ts,ts_end,open,high,low,close,volume\n")
 
 	// Write data rows
 	for _, bar := range bars {
@@ -313,10 +314,11 @@ func barsToCSV(bars []database.OHLCVBar) ([]byte, error) {
 		tsStart := formatTimestamp(bar.Ts)
 		tsEnd := formatTimestamp(bar.TsEnd)
 
-		// Format row: symbol,publisher,ts,ts_end,open,high,low,close,volume
-		fmt.Fprintf(buf, "%s,%s,%s,%s,%.8f,%.8f,%.8f,%.8f,%d\n",
+		// Format row: symbol,publisher,bar_size,ts,ts_end,open,high,low,close,volume
+		fmt.Fprintf(buf, "%s,%s,%s,%s,%s,%.8f,%.8f,%.8f,%.8f,%d\n",
 			escapeCSV(bar.Symbol),
 			escapeCSV(bar.Publisher),
+			escapeCSV(bar.BarSize),
 			tsStart,
 			tsEnd,
 			bar.Open,

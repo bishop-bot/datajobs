@@ -3,24 +3,33 @@ package database
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/bishop-bot/datajobs/internal/config"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/jackc/pgx/v5/pgxpool"
+	qdb "github.com/questdb/go-questdb-client/v4"
 )
 
-// QuestDB wraps the QuestDB connection pool.
+// QuestDB wraps the QuestDB connection pool and line sender.
 type QuestDB struct {
-	pool  *pgxpool.Pool
-	cfg   config.QuestDBConfig
-	ilpAddr string
+	pool       *pgxpool.Pool
+	lineSender qdb.LineSender
+	cfg        config.QuestDBConfig
+	httpAddr   string
 }
 
-// NewQuestDB creates a new QuestDB connection pool.
+// NewQuestDB creates a new QuestDB connection pool and line sender.
 func NewQuestDB(cfg config.QuestDBConfig) (*QuestDB, error) {
-	// Build connection string
+	q := &QuestDB{
+		cfg: cfg,
+	}
+
+	// HTTP ILP uses cfg.ILPHTTPPort (default 9000, same as web UI)
+	// TCP ILP uses cfg.ILPPort (default 9009)
+	q.httpAddr = fmt.Sprintf("%s:%d", cfg.Host, cfg.ILPHTTPPort)
+
+	// Create PostgreSQL connection pool for SQL queries
 	connStr := fmt.Sprintf(
 		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		cfg.User,
@@ -42,30 +51,42 @@ func NewQuestDB(cfg config.QuestDBConfig) (*QuestDB, error) {
 	poolConfig.MaxConnIdleTime = 30 * time.Minute
 	poolConfig.HealthCheckPeriod = 30 * time.Second
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
+	q.pool = pool
 
 	// Verify connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("failed to ping QuestDB: %w", err)
 	}
 
+	// Create line sender for ingestion (HTTP transport uses same port as web UI)
+	lineSender, err := qdb.NewLineSender(ctx,
+		qdb.WithHttp(),
+		qdb.WithAddress(q.httpAddr),
+		qdb.WithBasicAuth(cfg.User, cfg.Password),
+	)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("failed to create line sender: %w", err)
+	}
+	q.lineSender = lineSender
+
 	logging.Info("connected to QuestDB",
 		"host", cfg.Host,
-		"port", cfg.Port,
+		"http_ilp_port", cfg.ILPHTTPPort,
+		"pg_port", cfg.Port,
+		"tcp_ilp_port", cfg.ILPPort,
 		"pool_size", cfg.PoolSize,
 	)
 
-	return &QuestDB{
-		pool:     pool,
-		cfg:      cfg,
-		ilpAddr:  fmt.Sprintf("%s:%d", cfg.Host, cfg.ILPPort),
-	}, nil
+	return q, nil
 }
 
 // Pool returns the underlying pgxpool.Pool for direct access.
@@ -73,13 +94,18 @@ func (q *QuestDB) Pool() *pgxpool.Pool {
 	return q.pool
 }
 
-// ILPAddr returns the ILP address for ingestion.
-func (q *QuestDB) ILPAddr() string {
-	return q.ilpAddr
+// LineSender returns the QuestDB line sender for ingestion.
+func (q *QuestDB) LineSender() qdb.LineSender {
+	return q.lineSender
 }
 
-// Close closes the connection pool.
+
+
+// Close closes the connection pool and line sender.
 func (q *QuestDB) Close() {
+	if q.lineSender != nil {
+		q.lineSender.Close(context.Background())
+	}
 	if q.pool != nil {
 		q.pool.Close()
 	}
@@ -147,6 +173,8 @@ type OHLCVBar struct {
 	Symbol string `json:"symbol"`
 	// Publisher is the data source/publisher (e.g., "IB", "NASDAQ")
 	Publisher string `json:"publisher"`
+	// BarSize is the bar interval (e.g., "1min", "5mins", "1hour", "1day")
+	BarSize string `json:"bar_size"`
 	// Ts is the bar start timestamp (nanoseconds since epoch)
 	Ts int64 `json:"ts"`
 	// TsEnd is the bar end timestamp (nanoseconds since epoch)
@@ -163,24 +191,9 @@ type OHLCVBar struct {
 	Volume int64 `json:"volume"`
 }
 
-// ToSlice converts OHLCVBar slice to interface slice for generic handling.
-func (b OHLCVBar) ToSlice() []interface{} {
-	return []interface{}{
-		b.Symbol,
-		b.Publisher,
-		b.Ts,
-		b.TsEnd,
-		b.Open,
-		b.High,
-		b.Low,
-		b.Close,
-		b.Volume,
-	}
-}
-
 // OHLCVColumns returns the column names for the ohlcv_bars table.
 func OHLCVColumns() []string {
-	return []string{"symbol", "publisher", "ts", "ts_end", "open", "high", "low", "close", "volume"}
+	return []string{"symbol", "publisher", "bar_size", "ts", "ts_end", "open", "high", "low", "close", "volume"}
 }
 
 // OHLCVUpsertResult contains the result of an upsert operation.
@@ -190,85 +203,83 @@ type OHLCVUpsertResult struct {
 	Errors       []string
 }
 
-// UpsertOHLCVBars performs a bulk upsert of OHLCV bars into QuestDB.
-// It uses ON CONFLICT DO UPDATE to handle re-ingestion of historical data.
-// The upsert key is (symbol, ts) to avoid duplicates.
+// UpsertOHLCVBars ingests OHLCV bars into QuestDB using the Line Protocol.
+// Uses the table Auto-Creation feature - table is created automatically if it doesn't exist.
 func (q *QuestDB) UpsertOHLCVBars(ctx context.Context, bars []OHLCVBar) (*OHLCVUpsertResult, error) {
 	if len(bars) == 0 {
 		return &OHLCVUpsertResult{RowsAffected: 0}, nil
 	}
 
-	if q == nil {
+	if q == nil || q.lineSender == nil {
 		logging.Error("QuestDB is nil in UpsertOHLCVBars")
-		return nil, fmt.Errorf("QuestDB is nil")
+		return nil, fmt.Errorf("QuestDB line sender is nil")
 	}
 
 	start := time.Now()
 	result := &OHLCVUpsertResult{}
 
-	// Build the upsert query
-	columns := OHLCVColumns()
-	placeholders := make([]string, len(bars))
-	values := make([]interface{}, 0, len(bars)*len(columns))
+	for _, bar := range bars {
+		// Convert nanoseconds to time.Time for QuestDB
+		ts := time.Unix(0, bar.Ts).UTC()
+		tsEnd := time.Unix(0, bar.TsEnd).UTC()
 
-	for i, bar := range bars {
-		// Create placeholders for each row: ($1, $2, ...), ($9, $10, ...), etc.
-		base := i*len(columns) + 1
-		rowPlaceholders := make([]string, len(columns))
-		for j := range columns {
-			rowPlaceholders[j] = fmt.Sprintf("$%d", base+j)
+		err := q.lineSender.Table("ohlcv_bars").
+			Symbol("symbol", bar.Symbol).
+			Symbol("publisher", bar.Publisher).
+			Symbol("bar_size", bar.BarSize).
+			TimestampColumn("ts_end", tsEnd).
+			Float64Column("open", bar.Open).
+			Float64Column("high", bar.High).
+			Float64Column("low", bar.Low).
+			Float64Column("close", bar.Close).
+			Int64Column("volume", bar.Volume).
+			At(ctx, ts)
+
+		if err != nil {
+			logging.Error("QuestDB line sender failed",
+				"symbol", bar.Symbol,
+				"error", err.Error(),
+			)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", bar.Symbol, err))
+			continue
 		}
-		placeholders[i] = fmt.Sprintf("(%s)", strings.Join(rowPlaceholders, ", "))
-		values = append(values, bar.ToSlice()...)
+		result.RowsAffected++
 	}
 
-	query := fmt.Sprintf(`
-		INSERT INTO ohlcv_bars (%s)
-		VALUES %s
-		ON CONFLICT (symbol, ts) DO UPDATE SET
-			publisher = EXCLUDED.publisher,
-			ts_end = EXCLUDED.ts_end,
-			open = EXCLUDED.open,
-			high = EXCLUDED.high,
-			low = EXCLUDED.low,
-			close = EXCLUDED.close,
-			volume = EXCLUDED.volume
-	`, strings.Join(columns, ", "), strings.Join(placeholders, ", "))
-
-	logging.Debug("executing OHLCV upsert",
-		"query", query,
-		"values_count", len(values),
-		"bars_count", len(bars),
-	)
-
-	rows, err := q.pool.Exec(ctx, query, values...)
-	if err != nil {
-		logging.Error("QuestDB exec failed",
-			"query", query,
+	// Flush the buffer to ensure all data is sent
+	if err := q.lineSender.Flush(ctx); err != nil {
+		// Log the error but still return partial results
+		// The go-questdb-client buffers data, so if Flush fails,
+		// some rows may still have been sent successfully
+		logging.Error("QuestDB flush failed (partial results may have been sent)",
+			"rows_queued", result.RowsAffected,
 			"error", err.Error(),
 		)
-		return nil, fmt.Errorf("failed to upsert OHLCV bars: %w", err)
+		// Include the flush error in result so caller knows about it
+		result.Errors = append(result.Errors, fmt.Sprintf("flush failed: %v", err))
 	}
 
-	result.RowsAffected = int(rows.RowsAffected())
 	result.Duration = time.Since(start)
 
-	logging.Debug("upserted OHLCV bars",
+	logging.Info("ingested OHLCV bars via ILP",
 		"rows", result.RowsAffected,
 		"duration", result.Duration,
+		"errors", len(result.Errors),
 	)
 
 	return result, nil
 }
 
-// EnsureTableOHLCV creates the ohlcv_bars table if it doesn't exist.
+// EnsureTableOHLCV creates the ohlcv_bars table if it doesn't exist using SQL.
+// This is optional since the Line Protocol can auto-create tables.
 func (q *QuestDB) EnsureTableOHLCV(ctx context.Context) error {
 	const createSQL = `
 		CREATE TABLE IF NOT EXISTS ohlcv_bars (
 			symbol    SYMBOL,
 			publisher SYMBOL,
-			ts        TIMESTAMP_NS,
-			ts_end    TIMESTAMP_NS,
+			bar_size  SYMBOL,
+			ts        TIMESTAMP,
+			ts_end    TIMESTAMP,
 			open      DOUBLE,
 			high      DOUBLE,
 			low       DOUBLE,
@@ -310,9 +321,9 @@ func (q *QuestDB) ListTables(ctx context.Context) ([]TableInfo, error) {
 			return nil, err
 		}
 		tables = append(tables, TableInfo{
-			Name:        name,
+			Name:                 name,
 			DesignatedTimestamp: timestamp,
-			PartitionBy: partition,
+			PartitionBy:          partition,
 		})
 	}
 	return tables, rows.Err()

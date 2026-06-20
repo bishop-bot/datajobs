@@ -18,8 +18,9 @@ database:
 
 questdb:
   host: "localhost"
-  port: 8812
-  ilpPort: 9009
+  port: 8812          # PostgreSQL port
+  ilpPort: 9009       # TCP ILP port
+  ilpHTTPPort: 9000   # HTTP ILP port (same as web UI)
   user: "admin"
   password: "quest"
   database: "qdb"

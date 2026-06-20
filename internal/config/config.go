@@ -51,13 +51,14 @@ type DatabaseConfig struct {
 
 // QuestDBConfig holds QuestDB settings.
 type QuestDBConfig struct {
-	Host     string `yaml:"host" env:"QUESTDB_HOST"`
-	Port     int    `yaml:"port" env:"QUESTDB_PORT"`
-	ILPPort  int    `yaml:"ilpPort" env:"QUESTDB_ILP_PORT"`
-	User     string `yaml:"user" env:"QUESTDB_USER"`
-	Password string `yaml:"password" env:"QUESTDB_PASSWORD"`
-	Database string `yaml:"database" env:"QUESTDB_DATABASE"`
-	PoolSize int    `yaml:"poolSize" env:"QUESTDB_POOL_SIZE"`
+	Host         string `yaml:"host" env:"QUESTDB_HOST"`
+	Port         int    `yaml:"port" env:"QUESTDB_PORT"`            // PostgreSQL port (default 8812)
+	ILPPort      int    `yaml:"ilpPort" env:"QUESTDB_ILP_PORT"`     // TCP ILP port (default 9009)
+	ILPHTTPPort  int    `yaml:"ilpHTTPPort" env:"QUESTDB_ILP_HTTP_PORT"` // HTTP ILP port (default 9000)
+	User         string `yaml:"user" env:"QUESTDB_USER"`
+	Password     string `yaml:"password" env:"QUESTDB_PASSWORD"`
+	Database     string `yaml:"database" env:"QUESTDB_DATABASE"`
+	PoolSize     int    `yaml:"poolSize" env:"QUESTDB_POOL_SIZE"`
 }
 
 // IBConfig holds Interactive Brokers Web API settings.
@@ -207,6 +208,7 @@ func applyEnvOverrides(cfg *Config) {
 	setString(&cfg.QuestDB.Host, "QUESTDB_HOST")
 	setInt(&cfg.QuestDB.Port, "QUESTDB_PORT")
 	setInt(&cfg.QuestDB.ILPPort, "QUESTDB_ILP_PORT")
+	setInt(&cfg.QuestDB.ILPHTTPPort, "QUESTDB_ILP_HTTP_PORT")
 	setString(&cfg.QuestDB.User, "QUESTDB_USER")
 	setString(&cfg.QuestDB.Password, "QUESTDB_PASSWORD")
 	setString(&cfg.QuestDB.Database, "QUESTDB_DATABASE")
@@ -257,6 +259,7 @@ func setDefaults(cfg *Config) {
 	missingString(&cfg.QuestDB.Host, "localhost")
 	zeroInt(&cfg.QuestDB.Port, 8812)
 	zeroInt(&cfg.QuestDB.ILPPort, 9009)
+	zeroInt(&cfg.QuestDB.ILPHTTPPort, 9000)
 	missingString(&cfg.QuestDB.User, "admin")
 	missingString(&cfg.QuestDB.Password, "quest")
 	missingString(&cfg.QuestDB.Database, "qdb")

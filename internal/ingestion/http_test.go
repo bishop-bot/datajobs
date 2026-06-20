@@ -15,6 +15,7 @@ func TestBarsToCSV(t *testing.T) {
 		{
 			Symbol:    "AAPL",
 			Publisher: "IB",
+			BarSize:   "5mins",
 			Ts:        1719792000000000000, // 2024-07-01 00:00:00 UTC
 			TsEnd:     1719878400000000000, // 2024-07-02 00:00:00 UTC
 			Open:      185.50,
@@ -26,6 +27,7 @@ func TestBarsToCSV(t *testing.T) {
 		{
 			Symbol:    "IBM",
 			Publisher: "IB",
+			BarSize:   "5mins",
 			Ts:        1719792000000000000,
 			TsEnd:     1719878400000000000,
 			Open:      190.00,
@@ -42,7 +44,7 @@ func TestBarsToCSV(t *testing.T) {
 	}
 
 	// Check header
-	expectedHeader := "symbol,publisher,ts,ts_end,open,high,low,close,volume\n"
+	expectedHeader := "symbol,publisher,bar_size,ts,ts_end,open,high,low,close,volume\n"
 	if string(csv[:len(expectedHeader)]) != expectedHeader {
 		t.Errorf("header mismatch:\ngot: %s\nwant: %s", string(csv[:len(expectedHeader)]), expectedHeader)
 	}
@@ -61,6 +63,11 @@ func TestBarsToCSV(t *testing.T) {
 		t.Error("CSV missing IBM symbol")
 	}
 
+	// Should contain bar_size
+	if !containsSubstring(data, "5mins") {
+		t.Error("CSV missing bar_size")
+	}
+
 	t.Logf("Generated CSV:\n%s", string(csv))
 }
 
@@ -72,7 +79,7 @@ func TestBarsToCSV_Empty(t *testing.T) {
 	}
 
 	// Should just have header
-	expected := "symbol,publisher,ts,ts_end,open,high,low,close,volume\n"
+	expected := "symbol,publisher,bar_size,ts,ts_end,open,high,low,close,volume\n"
 	if string(csv) != expected {
 		t.Errorf("empty bars CSV mismatch:\ngot: %s\nwant: %s", string(csv), expected)
 	}
@@ -83,6 +90,7 @@ func TestBarsToCSV_WithSpecialChars(t *testing.T) {
 		{
 			Symbol:    "A,B", // Comma in symbol
 			Publisher: "IB",
+			BarSize:   "1hour",
 			Ts:        1719792000000000000,
 			TsEnd:     1719878400000000000,
 			Open:      185.50,
@@ -213,10 +221,10 @@ func TestMultipartWriter(t *testing.T) {
 
 func TestNewHTTPClient(t *testing.T) {
 	client := NewHTTPClient(config.QuestDBConfig{
-		Host:     "localhost",
-		ILPPort:  9000,
-		User:     "admin",
-		Password: "quest",
+		Host:         "localhost",
+		ILPHTTPPort:  9000,
+		User:         "admin",
+		Password:     "quest",
 	})
 
 	if client.baseURL != "http://localhost:9000" {

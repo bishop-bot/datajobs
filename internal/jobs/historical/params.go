@@ -7,7 +7,7 @@ import (
 const (
 	// Default period for historical data requests (5 years)
 	defaultPeriod = "5y"
-	// Default bar size (1 day) - IB API uses "1d" not "1day"
+	// Default bar size (1 day)
 	defaultBar = "1d"
 	// Default outside regular trading hours
 	defaultOutsideRth = false
