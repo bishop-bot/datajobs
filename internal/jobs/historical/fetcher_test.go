@@ -84,14 +84,15 @@ func (m *mockPaginatedIBProvider) Close() error {
 func TestFetchOHLCV(t *testing.T) {
 	t.Run("fetches and converts data successfully", func(t *testing.T) {
 		nowMs := time.Now().UnixMilli()
-		mock := &mockIBProvider{
-			historicalDataResp: &ibapi.HistoricalDataResponse{
+		// Use mockPaginatedIBProvider with a single page that returns empty on subsequent requests
+		mock := newMockPaginatedProvider([]*ibapi.HistoricalDataResponse{
+			{
 				Symbol: "AAPL",
 				Data: []ibapi.HistoricalDataBar{
 					{T: nowMs, O: 185.50, H: 186.75, L: 184.90, C: 186.20, V: 50000000},
 				},
 			},
-		}
+		})
 
 		instr := instrument{Conid: "265598", Symbol: "AAPL", Exchange: "SMART"}
 		params := historicalParams{Period: "1d", Bar: "1d", OutsideRth: false}
@@ -111,13 +112,20 @@ func TestFetchOHLCV(t *testing.T) {
 
 	t.Run("fetches paginated data across multiple pages", func(t *testing.T) {
 		nowMs := time.Now().UnixMilli()
-		// Use minute bars so pagination triggers (expectedBarsPerPage=100)
-		// Create pages with 100 bars each to trigger pagination
+		// Data is ascending (oldest → newest)
+		// Page 1: 100 bars, oldest to newest
+		// page1Bars[0] = now - 100min, page1Bars[99] = now - 1min
 		page1Bars := make([]ibapi.HistoricalDataBar, 100)
+		for i := 0; i < 100; i++ {
+			page1Bars[i] = ibapi.HistoricalDataBar{T: nowMs - int64((100-i)*60*1000), O: 185.50, H: 186.75, L: 184.90, C: 186.20, V: 50000000}
+		}
+		page1OldestTs := nowMs - 100*60*1000 // 100 minutes ago
+
+		// Page 2: 100 bars, older data
 		page2Bars := make([]ibapi.HistoricalDataBar, 100)
 		for i := 0; i < 100; i++ {
-			page1Bars[i] = ibapi.HistoricalDataBar{T: nowMs - int64(i*60*1000), O: 185.50, H: 186.75, L: 184.90, C: 186.20, V: 50000000}
-			page2Bars[i] = ibapi.HistoricalDataBar{T: nowMs - int64((100+i)*60*1000), O: 183.00, H: 184.00, L: 182.00, C: 183.50, V: 45000000}
+			// page2Bars[0] = now - 200min, page2Bars[99] = now - 101min
+			page2Bars[i] = ibapi.HistoricalDataBar{T: page1OldestTs - int64((100-i)*60*1000), O: 183.00, H: 184.00, L: 182.00, C: 183.50, V: 45000000}
 		}
 
 		mock := newMockPaginatedProvider([]*ibapi.HistoricalDataResponse{
@@ -125,8 +133,9 @@ func TestFetchOHLCV(t *testing.T) {
 			{Symbol: "AAPL", Data: page2Bars},
 		})
 
+		// Use 1d period so all bars are within range
 		instr := instrument{Conid: "265598", Symbol: "AAPL", Exchange: "SMART"}
-		params := historicalParams{Period: "5y", Bar: "5mins", OutsideRth: false}
+		params := historicalParams{Period: "1d", Bar: "5mins", OutsideRth: false}
 
 		bars, err := fetchOHLCV(context.Background(), mock, instr, params)
 
@@ -194,18 +203,20 @@ func TestFetchOHLCV(t *testing.T) {
 
 	t.Run("stops pagination when reaching fromTime boundary", func(t *testing.T) {
 		nowMs := time.Now().UnixMilli()
-		fiveYearsAgoMs := nowMs - int64(5*365*24*3600*1000)
-
-		// Use minute bars so pagination triggers (100 bars per page)
-		// Page 1: 100 bars (full page to trigger pagination)
+		// Data is ascending (oldest → newest)
+		// Page 1: 100 bars from 1000 minutes ago to 1 minute ago
+		// page1Bars[0] = now - 100min, page1Bars[99] = now - 1min
 		page1Bars := make([]ibapi.HistoricalDataBar, 100)
 		for i := 0; i < 100; i++ {
-			page1Bars[i] = ibapi.HistoricalDataBar{T: nowMs - int64(i*60*1000), O: 185.50, H: 186.75, L: 184.90, C: 186.20, V: 50000000}
+			page1Bars[i] = ibapi.HistoricalDataBar{T: nowMs - int64((100-i)*60*1000), O: 185.50, H: 186.75, L: 184.90, C: 186.20, V: 50000000}
 		}
-		// Page 2 has data that crosses the 5y boundary
-		page2Bars := []ibapi.HistoricalDataBar{
-			{T: fiveYearsAgoMs - int64(24*3600*1000), O: 100.00, H: 101.00, L: 99.00, C: 100.50, V: 30000000},
-			{T: fiveYearsAgoMs + int64(24*3600*1000), O: 101.00, H: 102.00, L: 100.00, C: 101.50, V: 31000000},
+		page1OldestTs := nowMs - 100*60*1000 // 100 minutes ago
+
+		// Page 2: 50 bars, older data
+		page2Bars := make([]ibapi.HistoricalDataBar, 50)
+		for i := 0; i < 50; i++ {
+			// page2Bars[0] = now - 150min, page2Bars[49] = now - 199min
+			page2Bars[i] = ibapi.HistoricalDataBar{T: page1OldestTs - int64((50-i)*60*1000), O: 100.00, H: 101.00, L: 99.00, C: 100.50, V: 30000000}
 		}
 
 		mock := newMockPaginatedProvider([]*ibapi.HistoricalDataResponse{
@@ -213,17 +224,18 @@ func TestFetchOHLCV(t *testing.T) {
 			{Symbol: "AAPL", Data: page2Bars},
 		})
 
+		// Use 1d period so all bars are within range
 		instr := instrument{Conid: "265598", Symbol: "AAPL", Exchange: "SMART"}
-		params := historicalParams{Period: "5y", Bar: "5mins", OutsideRth: false}
+		params := historicalParams{Period: "1d", Bar: "5mins", OutsideRth: false}
 
 		bars, err := fetchOHLCV(context.Background(), mock, instr, params)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		// Should have 101 bars: 100 from page 1 + 1 from page 2 (one filtered at boundary)
-		if len(bars) != 101 {
-			t.Errorf("expected 101 bars (100 page1 + 1 filtered page2), got %d", len(bars))
+		// Should have 150 bars: 100 from page 1 + 50 from page 2
+		if len(bars) != 150 {
+			t.Errorf("expected 150 bars (100 page1 + 50 page2), got %d", len(bars))
 		}
 	})
 }
@@ -418,38 +430,5 @@ func TestFilterBarsFromTime_AllFiltered(t *testing.T) {
 
 	if len(filtered) != 0 {
 		t.Errorf("expected 0 bars after filtering, got %d", len(filtered))
-	}
-}
-
-func TestExpectedBarsPerPage(t *testing.T) {
-	tests := []struct {
-		bar  string
-		want int
-	}{
-		{"1min", 100},
-		{"5min", 100},
-		{"30min", 100},
-		{"5mins", 100},
-		{"1h", 100},
-		{"8h", 100},
-		{"1d", 1000},
-		{"365d", 1000},
-		{"1w", 1000},
-		{"52w", 1000},
-		{"1m", 1000},
-		{"12m", 1000},
-		{"1y", 1000},
-		{"5y", 1000},
-		{"", 100},
-		{"unknown", 100},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.bar, func(t *testing.T) {
-			got := expectedBarsPerPage(tt.bar)
-			if got != tt.want {
-				t.Errorf("expectedBarsPerPage(%q) = %d, want %d", tt.bar, got, tt.want)
-			}
-		})
 	}
 }

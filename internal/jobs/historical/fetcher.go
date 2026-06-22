@@ -81,28 +81,45 @@ func fetchOHLCV(ctx context.Context, ibProvider ib.Provider, instr instrument, p
 		// Convert this page's data
 		pageBars := convertIBBarsToOHLCV(instr.Symbol, resp.Data, params)
 
+		if len(pageBars) == 0 {
+			break
+		}
+
+		// Data is returned in ascending order (oldest → newest)
+		oldestTs := pageBars[0].Ts
+		newestTs := pageBars[len(pageBars)-1].Ts
+
 		// Check if we've reached the fromTime boundary
-		earliestTs := pageBars[0].Ts // First bar is earliest (data is returned in reverse chronological order)
-		if earliestTs < fromTime {
-			// Filter bars to only include those >= fromTime
-			filteredBars := filterBarsFromTime(pageBars, fromTime)
-			allBars = append(allBars, filteredBars...)
+		// Filter to only include bars >= fromTime
+		filteredBars := filterBarsFromTime(pageBars, fromTime)
+		if len(filteredBars) == 0 {
+			// All bars are older than fromTime, stop
+			logging.Info("all bars older than fromTime, stopping pagination",
+				"symbol", instr.Symbol,
+				"page", pageCount,
+				"newestTs", newestTs,
+				"fromTime", fromTime,
+			)
+			break
+		}
+
+		// Append filtered bars to collection
+		allBars = append(allBars, filteredBars...)
+
+		// If filteredBars < pageBars, some were filtered out (boundary case)
+		if len(filteredBars) < len(pageBars) {
 			logging.Info("reached fromTime boundary, stopping pagination",
 				"symbol", instr.Symbol,
 				"page", pageCount,
-				"earliestTs", earliestTs,
+				"newestTs", newestTs,
 				"fromTime", fromTime,
 				"barsFiltered", len(pageBars)-len(filteredBars),
 			)
 			break
 		}
 
-		// Append all bars from this page
-		allBars = append(allBars, pageBars...)
-
-		// For next request, use the latest (ending) timestamp of the current data set
-		latestTs := pageBars[len(pageBars)-1].Ts
-		startTime = formatTimestampAsIB(latestTs)
+		// For next request, use the oldest timestamp to get data BEFORE this page
+		startTime = formatTimestampAsIB(oldestTs)
 
 		logging.Debug("paginating to next page",
 			"symbol", instr.Symbol,
@@ -111,11 +128,6 @@ func fetchOHLCV(ctx context.Context, ibProvider ib.Provider, instr instrument, p
 			"totalBars", len(allBars),
 			"nextStartTime", startTime,
 		)
-
-		// If this is the last page (fewer bars than expected), stop
-		if len(resp.Data) < expectedBarsPerPage(params.Bar) {
-			break
-		}
 	}
 
 	logging.Info("completed paginated fetch",
@@ -250,41 +262,3 @@ func filterBarsFromTime(bars []database.OHLCVBar, fromTime int64) []database.OHL
 	return nil
 }
 
-// expectedBarsPerPage returns the expected number of bars per page for a given bar size.
-// This is used to detect when we've reached the last page.
-// Format: {n}min, {n}h, {n}d, {n}w, {n}m, {n}y.
-func expectedBarsPerPage(bar string) int {
-	if bar == "" {
-		return 100
-	}
-
-	bar = strings.ToLower(bar)
-	bar = strings.TrimSuffix(bar, "s")
-
-	// Parse to get the unit
-	var unit string
-	for i, r := range bar {
-		if r >= '0' && r <= '9' {
-			continue
-		}
-		unit = bar[i:]
-		break
-	}
-
-	switch unit {
-	case "min":
-		return 100 // IB typically returns 100 bars per request for minute bars
-	case "h":
-		return 100
-	case "d":
-		return 1000 // IB typically returns up to 1000 bars per request for daily+ bars
-	case "w":
-		return 1000
-	case "m":
-		return 1000
-	case "y":
-		return 1000
-	default:
-		return 100
-	}
-}
