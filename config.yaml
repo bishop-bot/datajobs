@@ -36,6 +36,7 @@ ib:
 earnings:
   baseURL: "https://api.earningsapi.com"
   timeout: 30s
+  rateLimitPerMin: 30  # Requests per minute (default: 30, max suggested: 60)
 
 jobs:
   - id: "bulk-es-ingest"
@@ -137,7 +138,7 @@ jobs:
     type: "corporate_actions"
     handler: "earnings_sync"
     enabled: false
-    timeout: 300
+    timeout: 3600
     retry:
       maxAttempts: 3
       initialDelay: 1000
@@ -145,6 +146,7 @@ jobs:
       multiplier: 2.0
     metadata:
       description: "Syncs stock earnings data from Earnings API to SQLite"
+      lookForwardDays: 30  # Number of days ahead to sync earnings (default: 30)
 
 metrics:
   enabled: true

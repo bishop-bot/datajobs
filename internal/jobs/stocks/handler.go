@@ -50,6 +50,9 @@ func isProviderUsable(p earnings.Provider) bool {
 	return true
 }
 
+// Default look-forward period for earnings sync (in days)
+const defaultLookForwardDays = 30
+
 // earningsSyncHandlerImpl performs the daily earnings sync.
 func earningsSyncHandlerImpl(ctx context.Context, job worker.Job, db *database.DB, earningsProvider earnings.Provider) (string, error) {
 	logger := logging.FromContext(ctx).With("job_id", job.ID)
@@ -64,29 +67,78 @@ func earningsSyncHandlerImpl(ctx context.Context, job worker.Job, db *database.D
 
 	logger.Debug("earnings sync handler started")
 
-	// Get today's date in YYYY-MM-DD format
-	today := time.Now().UTC().Format("2006-01-02")
-	logger.Info("syncing earnings for date", "date", today)
+	// Get look-forward days from job metadata, default to 30
+	lookForwardDays := defaultLookForwardDays
+	if days, ok := job.Metadata["lookForwardDays"]; ok {
+		if d, ok := days.(int); ok && d > 0 {
+			lookForwardDays = d
+		} else if d, ok := days.(float64); ok && d > 0 {
+			lookForwardDays = int(d)
+		}
+	}
+	logger.Info("starting earnings sync job", "lookForwardDays", lookForwardDays)
 
-	// Fetch earnings calendar from provider
-	calendarDate := earnings.NewCalendarDate(time.Now().UTC())
+	// Sync earnings for each day in the look-forward period
+	today := time.Now().UTC()
+	totalUpserted := 0
+	totalSkipped := 0
+	daysProcessed := 0
+
+	for i := 0; i <= lookForwardDays; i++ {
+		syncDate := today.AddDate(0, 0, i)
+		syncDateStr := syncDate.Format("2006-01-02")
+
+		upserted, skipped, err := syncEarningsForDate(ctx, db, earningsProvider, syncDateStr)
+		if err != nil {
+			logger.Error("failed to sync earnings for date", "date", syncDateStr, "error", err)
+			// Continue with next date rather than failing the entire job
+			continue
+		}
+
+		totalUpserted += upserted
+		totalSkipped += skipped
+		daysProcessed++
+	}
+
+	// Build result message
+	result := fmt.Sprintf(
+		"synced lookForwardDays=%d: processed=%d, upserted=%d, skipped=%d",
+		lookForwardDays,
+		daysProcessed,
+		totalUpserted,
+		totalSkipped,
+	)
+
+	logger.Info("earnings sync completed", "result", result)
+	return result, nil
+}
+
+// syncEarningsForDate fetches and syncs earnings for a specific date.
+// Returns the number of records upserted and skipped.
+func syncEarningsForDate(ctx context.Context, db *database.DB, earningsProvider earnings.Provider, date string) (upserted int, skipped int, err error) {
+	logger := logging.FromContext(ctx).With("date", date)
+
+	// Fetch earnings calendar from provider for this specific date
+	parsedDate, _ := time.Parse("2006-01-02", date)
+	calendarDate := earnings.NewCalendarDate(parsedDate)
 	resp, err := earningsProvider.EarningsCalendar(ctx, calendarDate)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch earnings calendar: %w", err)
+		return 0, 0, fmt.Errorf("failed to fetch earnings calendar: %w", err)
 	}
 
 	// Convert response to StockEarnings entities
 	allEarnings := convertResponseToEntities(resp)
-	logger.Info("fetched earnings data",
+	if len(allEarnings) == 0 {
+		logger.Debug("no earnings data for date")
+		return 0, 0, nil
+	}
+
+	logger.Debug("fetched earnings data",
 		"total", len(allEarnings),
 		"pre", len(resp.Pre),
 		"after", len(resp.After),
 		"notSupplied", len(resp.NotSupplied),
 	)
-
-	if len(allEarnings) == 0 {
-		return "no earnings data to sync", nil
-	}
 
 	// Extract symbols for existing records check
 	symbols := make([]string, len(allEarnings))
@@ -96,9 +148,9 @@ func earningsSyncHandlerImpl(ctx context.Context, job worker.Job, db *database.D
 
 	// Query existing records
 	repo := NewRepository(db)
-	existing, err := repo.GetByDateAndSymbols(ctx, today, symbols)
+	existing, err := repo.GetByDateAndSymbols(ctx, date, symbols)
 	if err != nil {
-		return "", fmt.Errorf("failed to query existing records: %w", err)
+		return 0, 0, fmt.Errorf("failed to query existing records: %w", err)
 	}
 
 	// Defensive nil check (should never happen due to repository contract)
@@ -114,26 +166,19 @@ func earningsSyncHandlerImpl(ctx context.Context, job worker.Job, db *database.D
 		}
 	}
 
-	// Upsert new records
-	upserted, err := repo.UpsertBatch(ctx, newEarnings)
-	if err != nil {
-		return "", fmt.Errorf("failed to upsert earnings: %w", err)
+	skipped = len(allEarnings) - len(newEarnings)
+
+	if len(newEarnings) == 0 {
+		return 0, skipped, nil
 	}
 
-	// Build result message
-	result := fmt.Sprintf(
-		"synced date=%s: total=%d, pre=%d, after=%d, notSupplied=%d, upserted=%d, skipped=%d",
-		today,
-		len(allEarnings),
-		len(resp.Pre),
-		len(resp.After),
-		len(resp.NotSupplied),
-		upserted,
-		len(allEarnings)-upserted,
-	)
+	// Upsert new records
+	u, err := repo.UpsertBatch(ctx, newEarnings)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to upsert earnings: %w", err)
+	}
 
-	logger.Info("earnings sync completed", "result", result)
-	return result, nil
+	return u, skipped, nil
 }
 
 // convertResponseToEntities converts the API response to StockEarnings entities.

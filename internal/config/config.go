@@ -77,8 +77,9 @@ type IBConfig struct {
 
 // EarningsConfig holds Earnings API settings.
 type EarningsConfig struct {
-	BaseURL string        `yaml:"baseURL" env:"EARNINGS_BASE_URL"`
-	Timeout time.Duration `yaml:"timeout" env:"EARNINGS_TIMEOUT"`
+	BaseURL         string        `yaml:"baseURL" env:"EARNINGS_BASE_URL"`
+	Timeout         time.Duration `yaml:"timeout" env:"EARNINGS_TIMEOUT"`
+	RateLimitPerMin int           `yaml:"rateLimitPerMin" env:"EARNINGS_RATE_LIMIT_PER_MIN"` // Requests per minute (default: 30)
 }
 
 // JobConfig holds per-job configuration.
@@ -283,6 +284,7 @@ func setDefaults(cfg *Config) {
 	// Earnings defaults
 	missingString(&cfg.Earnings.BaseURL, "https://api.earningsapi.com")
 	zeroDuration(&cfg.Earnings.Timeout, 30*time.Second)
+	zeroInt(&cfg.Earnings.RateLimitPerMin, 30) // Default to 30 requests per minute (half of 60)
 
 	// Metrics defaults
 	missingString(&cfg.Metrics.Path, "/metrics")
