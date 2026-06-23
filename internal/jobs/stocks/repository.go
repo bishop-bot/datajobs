@@ -1,4 +1,4 @@
-package corporate_actions
+package stocks
 
 import (
 	"context"
