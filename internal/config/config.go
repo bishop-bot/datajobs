@@ -18,6 +18,7 @@ type Config struct {
 	Database  DatabaseConfig  `yaml:"database"`
 	QuestDB   QuestDBConfig   `yaml:"questdb"`
 	IB        IBConfig        `yaml:"ib"`
+	Earnings  EarningsConfig  `yaml:"earnings"`
 	Jobs      []JobConfig     `yaml:"jobs"`
 	Metrics   MetricsConfig   `yaml:"metrics"`
 	Tracing   TracingConfig   `yaml:"tracing"`
@@ -72,6 +73,13 @@ type IBConfig struct {
 	Password           string `yaml:"password" env:"IB_PASSWORD"`
 	SecondFactorMethod string `yaml:"secondFactorMethod" env:"IB_SECOND_FACTOR_METHOD"` // SMS, TOTP, IBKeyAndroid, IBKeyIOS
 	TOTPSecret         string `yaml:"totpSecret" env:"IB_TOTP_SECRET"`
+}
+
+// EarningsConfig holds Earnings API settings.
+type EarningsConfig struct {
+	BaseURL         string        `yaml:"baseURL" env:"EARNINGS_BASE_URL"`
+	Timeout         time.Duration `yaml:"timeout" env:"EARNINGS_TIMEOUT"`
+	RateLimitPerMin int           `yaml:"rateLimitPerMin" env:"EARNINGS_RATE_LIMIT_PER_MIN"` // Requests per minute (default: 30)
 }
 
 // JobConfig holds per-job configuration.
@@ -223,6 +231,10 @@ func applyEnvOverrides(cfg *Config) {
 	setString(&cfg.IB.SecondFactorMethod, "IB_SECOND_FACTOR_METHOD")
 	setString(&cfg.IB.TOTPSecret, "IB_TOTP_SECRET")
 
+	// Earnings
+	setString(&cfg.Earnings.BaseURL, "EARNINGS_BASE_URL")
+	setDuration(&cfg.Earnings.Timeout, "EARNINGS_TIMEOUT")
+
 	// Per-job overrides
 	for i := range cfg.Jobs {
 		prefix := "JOB_" + strconv.Itoa(i) + "_"
@@ -268,6 +280,11 @@ func setDefaults(cfg *Config) {
 	// IB defaults
 	missingString(&cfg.IB.BaseURL, "https://localhost:5001")
 	zeroDuration(&cfg.IB.Timeout, 30*time.Second)
+
+	// Earnings defaults
+	missingString(&cfg.Earnings.BaseURL, "https://api.earningsapi.com")
+	zeroDuration(&cfg.Earnings.Timeout, 30*time.Second)
+	zeroInt(&cfg.Earnings.RateLimitPerMin, 30) // Default to 30 requests per minute (half of 60)
 
 	// Metrics defaults
 	missingString(&cfg.Metrics.Path, "/metrics")

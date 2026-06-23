@@ -24,6 +24,7 @@ import (
 	"github.com/bishop-bot/datajobs/internal/jobs"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/metrics"
+	"github.com/bishop-bot/datajobs/internal/providers/earnings"
 	"github.com/bishop-bot/datajobs/internal/providers/ib"
 	"github.com/bishop-bot/datajobs/internal/scheduler"
 	"github.com/bishop-bot/datajobs/internal/tracing"
@@ -32,15 +33,17 @@ import (
 
 // App encapsulates all application components and lifecycle management.
 type App struct {
-	cfg        *config.Config
-	metrics    *metrics.Metrics
-	logger     *slog.Logger
+	cfg     *config.Config
+	metrics *metrics.Metrics
+	logger  *slog.Logger
 
 	// Core components
-	sqliteDB  *database.DB
-	questDB   *database.QuestDB
-	ilpClient *ingestion.ILPClient
-	ibClient  *ib.Client
+	sqliteDB          *database.DB
+	questDB           *database.QuestDB
+	ilpClient         *ingestion.ILPClient
+	ibClient          *ib.Client
+	earningsClient    *earnings.Client
+	earningsProvider  earnings.Provider  // May be wrapped with rate limiter
 
 	// Worker & scheduling
 	pool      *worker.Pool
@@ -57,7 +60,7 @@ type App struct {
 	quit     chan struct{}
 	shutdown chan os.Signal
 
-	mu     sync.Mutex
+	mu      sync.Mutex
 	running bool
 }
 
@@ -83,6 +86,12 @@ func NewApp(cfg *config.Config, m *metrics.Metrics) (*App, error) {
 	if err := app.initIB(); err != nil {
 		logger.Warn("failed to init IB client", "error", err)
 		// Continue - IB is optional for server startup
+	}
+
+	if err := app.initEarnings(); err != nil {
+		logger.Warn("failed to init Earnings client", "error", err)
+		// Earnings client is nil - handlers requiring it will not be registered
+		// but startup can continue
 	}
 
 	app.initWorkerPool()
@@ -160,6 +169,9 @@ func (a *App) Stop() {
 	}
 	if a.ibClient != nil {
 		a.ibClient.Close()
+	}
+	if a.earningsClient != nil {
+		a.earningsClient.Close()
 	}
 
 	// Shutdown HTTP server
@@ -263,6 +275,34 @@ func (a *App) IBClient() *ib.Client {
 	return a.ibClient
 }
 
+// initEarnings initializes the Earnings client with optional rate limiting.
+func (a *App) initEarnings() error {
+	earningsClient, err := earnings.NewClient(
+		earnings.WithBaseURL(a.cfg.Earnings.BaseURL),
+		earnings.WithTimeout(a.cfg.Earnings.Timeout),
+	)
+	if err != nil {
+		return err
+	}
+	a.earningsClient = earningsClient
+
+	// Wrap with rate limiter if configured
+	if a.cfg.Earnings.RateLimitPerMin > 0 {
+		a.earningsProvider = earnings.NewRateLimitedProvider(earningsClient, a.cfg.Earnings.RateLimitPerMin)
+		logging.Info("earnings provider configured with rate limiting",
+			"rateLimitPerMin", a.cfg.Earnings.RateLimitPerMin)
+	} else {
+		a.earningsProvider = earningsClient
+	}
+
+	return nil
+}
+
+// EarningsClient returns the Earnings client.
+func (a *App) EarningsClient() *earnings.Client {
+	return a.earningsClient
+}
+
 // initWorkerPool initializes the worker pool and registers handlers.
 func (a *App) initWorkerPool() {
 	a.pool = worker.NewPool(a.cfg.Worker, a.metrics)
@@ -273,7 +313,7 @@ func (a *App) initWorkerPool() {
 	}
 
 	// Register QuestDB handlers with all dependencies
-	jobs.RegisterQuestDBHandlers(a.pool, a.questDB, a.sqliteDB, a.ilpClient, a.ibClient)
+	jobs.RegisterQuestDBHandlers(a.pool, a.questDB, a.sqliteDB, a.ilpClient, a.ibClient, a.earningsProvider)
 }
 
 // initScheduler initializes the scheduler and registers jobs from config.
