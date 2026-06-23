@@ -11,7 +11,9 @@ import (
 	"github.com/bishop-bot/datajobs/internal/jobs/monitoring"
 	jobquestdb "github.com/bishop-bot/datajobs/internal/jobs/questdb"
 	"github.com/bishop-bot/datajobs/internal/jobs/system"
+	corporateactions "github.com/bishop-bot/datajobs/internal/jobs/corporate-actions"
 	"github.com/bishop-bot/datajobs/internal/providers/ib"
+	"github.com/bishop-bot/datajobs/internal/providers/earnings"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 
@@ -56,7 +58,7 @@ func BuiltInHandlers() map[string]worker.JobFunc {
 }
 
 // RegisterQuestDBHandlers registers QuestDB-specific handlers.
-func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqliteDB *database.DB, ilp *ingestion.ILPClient, ibProvider ib.Provider) {
+func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqliteDB *database.DB, ilp *ingestion.ILPClient, ibProvider ib.Provider, earningsProvider earnings.Provider) {
 	// Register bulk ingest with ILP
 	pool.RegisterHandler("bulk_ingest", func(ctx context.Context, job worker.Job) (string, error) {
 		return jobingestion.BulkIngestWithILP(ctx, job, ilp)
@@ -86,6 +88,17 @@ func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqlit
 			"questDB_nil", questDB == nil,
 			"sqliteDB_nil", sqliteDB == nil,
 			"hint", "ensure QuestDB and SQLite are properly configured",
+		)
+	}
+
+	// Register earnings sync handler
+	if sqliteDB != nil && earningsProvider != nil {
+		pool.RegisterHandler("earnings_sync", corporateactions.HandlerWithDeps(sqliteDB, earningsProvider))
+	} else {
+		logging.Warn("earnings_sync handler not registered",
+			"sqliteDB_nil", sqliteDB == nil,
+			"earningsProvider_nil", earningsProvider == nil,
+			"hint", "ensure SQLite and Earnings provider are properly configured",
 		)
 	}
 }

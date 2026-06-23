@@ -32,6 +32,11 @@ ib:
   insecureSkipVerify: true
   timeout: 30s
 
+# Earnings API
+earnings:
+  baseURL: "https://api.earningsapi.com"
+  timeout: 30s
+
 jobs:
   - id: "bulk-es-ingest"
     name: "Bulk ES Futures Data Ingest"
@@ -125,6 +130,21 @@ jobs:
       # instruments:
       #   - "265598"
       #   - "8314"
+
+  - id: "earnings-sync"
+    name: "Stock Earnings Daily Sync"
+    cron: "0 4 * * *"  # Daily at 04:00 HKT
+    type: "corporate_actions"
+    handler: "earnings_sync"
+    enabled: false
+    timeout: 300
+    retry:
+      maxAttempts: 3
+      initialDelay: 1000
+      maxDelay: 60000
+      multiplier: 2.0
+    metadata:
+      description: "Syncs stock earnings data from Earnings API to SQLite"
 
 metrics:
   enabled: true

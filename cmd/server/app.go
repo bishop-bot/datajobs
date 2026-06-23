@@ -25,6 +25,7 @@ import (
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/metrics"
 	"github.com/bishop-bot/datajobs/internal/providers/ib"
+	"github.com/bishop-bot/datajobs/internal/providers/earnings"
 	"github.com/bishop-bot/datajobs/internal/scheduler"
 	"github.com/bishop-bot/datajobs/internal/tracing"
 	"github.com/bishop-bot/datajobs/internal/worker"
@@ -37,10 +38,11 @@ type App struct {
 	logger     *slog.Logger
 
 	// Core components
-	sqliteDB  *database.DB
-	questDB   *database.QuestDB
-	ilpClient *ingestion.ILPClient
-	ibClient  *ib.Client
+	sqliteDB      *database.DB
+	questDB       *database.QuestDB
+	ilpClient     *ingestion.ILPClient
+	ibClient      *ib.Client
+	earningsClient *earnings.Client
 
 	// Worker & scheduling
 	pool      *worker.Pool
@@ -83,6 +85,11 @@ func NewApp(cfg *config.Config, m *metrics.Metrics) (*App, error) {
 	if err := app.initIB(); err != nil {
 		logger.Warn("failed to init IB client", "error", err)
 		// Continue - IB is optional for server startup
+	}
+
+	if err := app.initEarnings(); err != nil {
+		logger.Warn("failed to init Earnings client", "error", err)
+		// Continue - Earnings is optional for server startup
 	}
 
 	app.initWorkerPool()
@@ -160,6 +167,9 @@ func (a *App) Stop() {
 	}
 	if a.ibClient != nil {
 		a.ibClient.Close()
+	}
+	if a.earningsClient != nil {
+		a.earningsClient.Close()
 	}
 
 	// Shutdown HTTP server
@@ -263,6 +273,24 @@ func (a *App) IBClient() *ib.Client {
 	return a.ibClient
 }
 
+// initEarnings initializes the Earnings client.
+func (a *App) initEarnings() error {
+	earningsClient, err := earnings.NewClient(
+		earnings.WithBaseURL(a.cfg.Earnings.BaseURL),
+		earnings.WithTimeout(a.cfg.Earnings.Timeout),
+	)
+	if err != nil {
+		return err
+	}
+	a.earningsClient = earningsClient
+	return nil
+}
+
+// EarningsClient returns the Earnings client.
+func (a *App) EarningsClient() *earnings.Client {
+	return a.earningsClient
+}
+
 // initWorkerPool initializes the worker pool and registers handlers.
 func (a *App) initWorkerPool() {
 	a.pool = worker.NewPool(a.cfg.Worker, a.metrics)
@@ -273,7 +301,7 @@ func (a *App) initWorkerPool() {
 	}
 
 	// Register QuestDB handlers with all dependencies
-	jobs.RegisterQuestDBHandlers(a.pool, a.questDB, a.sqliteDB, a.ilpClient, a.ibClient)
+	jobs.RegisterQuestDBHandlers(a.pool, a.questDB, a.sqliteDB, a.ilpClient, a.ibClient, a.earningsClient)
 }
 
 // initScheduler initializes the scheduler and registers jobs from config.

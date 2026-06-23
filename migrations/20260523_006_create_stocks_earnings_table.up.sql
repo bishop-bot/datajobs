@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS stocks_earnings (
     mic TEXT,
     isin TEXT,
     type TEXT,
+    hour TEXT,
     status TEXT,
     eps REAL,
     eps_estimated REAL,
@@ -21,3 +22,4 @@ CREATE TABLE IF NOT EXISTS stocks_earnings (
 CREATE INDEX IF NOT EXISTS idx_stocks_earnings_symbol ON stocks_earnings(symbol);
 CREATE INDEX IF NOT EXISTS idx_stocks_earnings_date ON stocks_earnings(date);
 CREATE INDEX IF NOT EXISTS idx_stocks_earnings_mic ON stocks_earnings(mic);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stocks_earnings_symbol_date ON stocks_earnings(symbol, date);
