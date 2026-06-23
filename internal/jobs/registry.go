@@ -92,6 +92,9 @@ func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqlit
 	}
 
 	// Register earnings sync handler
+	// Note: We check the concrete *earnings.Client type directly so we can
+	// properly check for nil before registration. This avoids the "typed nil"
+	// issue where an interface holding a nil pointer is not actually nil.
 	if sqliteDB != nil && earningsProvider != nil {
 		pool.RegisterHandler("earnings_sync", corporateactions.HandlerWithDeps(sqliteDB, earningsProvider))
 	} else {

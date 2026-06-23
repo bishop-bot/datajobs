@@ -89,7 +89,8 @@ func NewApp(cfg *config.Config, m *metrics.Metrics) (*App, error) {
 
 	if err := app.initEarnings(); err != nil {
 		logger.Warn("failed to init Earnings client", "error", err)
-		// Continue - Earnings is optional for server startup
+		// Earnings client is nil - handlers requiring it will not be registered
+		// but startup can continue
 	}
 
 	app.initWorkerPool()

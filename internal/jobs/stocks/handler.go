@@ -3,6 +3,7 @@ package stocks
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/bishop-bot/datajobs/internal/database"
@@ -13,20 +14,47 @@ import (
 
 // HandlerWithDeps creates a job handler with database and earnings provider dependencies.
 func HandlerWithDeps(db *database.DB, earningsProvider earnings.Provider) worker.JobFunc {
+	// Validate the provider is actually usable.
+	// Note: In Go, an interface holding a nil pointer of a concrete type is NOT nil.
+	// We must use reflection to check if the underlying value is nil.
+	if !isProviderUsable(earningsProvider) {
+		return func(ctx context.Context, job worker.Job) (string, error) {
+			return "", fmt.Errorf("earnings provider not configured")
+		}
+	}
+
 	return func(ctx context.Context, job worker.Job) (string, error) {
 		return earningsSyncHandlerImpl(ctx, job, db, earningsProvider)
 	}
+}
+
+// isProviderUsable checks if the earnings provider is usable.
+// In Go, an interface holding a nil pointer of a concrete type is NOT nil.
+// This function uses reflection to detect "typed nils".
+func isProviderUsable(p earnings.Provider) bool {
+	if p == nil {
+		return false
+	}
+	// Use reflection to check if the underlying value is nil
+	v := reflect.ValueOf(p)
+	if v.Kind() == reflect.Ptr {
+		return !v.IsNil()
+	}
+	// If it's not a pointer type, check the Elem() for interface types
+	if v.Kind() == reflect.Interface && !v.IsNil() {
+		elem := v.Elem()
+		if elem.Kind() == reflect.Ptr {
+			return !elem.IsNil()
+		}
+	}
+	return true
 }
 
 // earningsSyncHandlerImpl performs the daily earnings sync.
 func earningsSyncHandlerImpl(ctx context.Context, job worker.Job, db *database.DB, earningsProvider earnings.Provider) (string, error) {
 	logger := logging.FromContext(ctx).With("job_id", job.ID)
 
-	logger.Debug("earnings sync handler started",
-		"db_nil", db == nil,
-		"earningsProvider_nil", earningsProvider == nil,
-	)
-
+	// Defensive nil checks
 	if db == nil {
 		return "", fmt.Errorf("SQLite database not available")
 	}
@@ -34,12 +62,15 @@ func earningsSyncHandlerImpl(ctx context.Context, job worker.Job, db *database.D
 		return "", fmt.Errorf("earnings provider not available")
 	}
 
+	logger.Debug("earnings sync handler started")
+
 	// Get today's date in YYYY-MM-DD format
 	today := time.Now().UTC().Format("2006-01-02")
 	logger.Info("syncing earnings for date", "date", today)
 
 	// Fetch earnings calendar from provider
-	resp, err := earningsProvider.EarningsCalendar(ctx, earnings.NewCalendarDate(time.Now().UTC()))
+	calendarDate := earnings.NewCalendarDate(time.Now().UTC())
+	resp, err := earningsProvider.EarningsCalendar(ctx, calendarDate)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch earnings calendar: %w", err)
 	}
