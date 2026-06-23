@@ -4,16 +4,16 @@ import (
 	"time"
 )
 
-// Hour represents the time of day when earnings are reported.
-type Hour string
+// Time represents the time of day when earnings are reported.
+type Time string
 
 const (
-	// HourBMO = Before Market Open
-	HourBMO Hour = "BMO"
-	// HourAMC = After Market Close
-	HourAMC Hour = "AMC"
-	// HourDMH = During Market Hour
-	HourDMH Hour = "DMH"
+	// TimeBMO = Before Market Open
+	TimeBMO Time = "BMO"
+	// TimeAMC = After Market Close
+	TimeAMC Time = "AMC"
+	// TimeDMH = During Market Hour
+	TimeDMH Time = "DMH"
 )
 
 // Status represents the reporting status of earnings.
@@ -36,7 +36,7 @@ type StockEarnings struct {
 	MIC               string
 	ISIN              string
 	Type              string
-	Hour              Hour
+	Time              Time
 	Status            Status
 	EPS               *float64
 	EPSEstimated      *float64
@@ -47,15 +47,15 @@ type StockEarnings struct {
 	UpdatedAt         time.Time
 }
 
-// ConvertHour converts an earnings calendar category to Hour enum.
-func ConvertHour(category string) Hour {
+// ConvertTime converts an earnings calendar category to Time enum.
+func ConvertTime(category string) Time {
 	switch category {
 	case "pre":
-		return HourBMO
+		return TimeBMO
 	case "after":
-		return HourAMC
+		return TimeAMC
 	case "during":
-		return HourDMH
+		return TimeDMH
 	default:
 		return "" // notSupplied or unknown
 	}

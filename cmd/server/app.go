@@ -24,8 +24,8 @@ import (
 	"github.com/bishop-bot/datajobs/internal/jobs"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/metrics"
-	"github.com/bishop-bot/datajobs/internal/providers/ib"
 	"github.com/bishop-bot/datajobs/internal/providers/earnings"
+	"github.com/bishop-bot/datajobs/internal/providers/ib"
 	"github.com/bishop-bot/datajobs/internal/scheduler"
 	"github.com/bishop-bot/datajobs/internal/tracing"
 	"github.com/bishop-bot/datajobs/internal/worker"
@@ -33,15 +33,15 @@ import (
 
 // App encapsulates all application components and lifecycle management.
 type App struct {
-	cfg        *config.Config
-	metrics    *metrics.Metrics
-	logger     *slog.Logger
+	cfg     *config.Config
+	metrics *metrics.Metrics
+	logger  *slog.Logger
 
 	// Core components
-	sqliteDB      *database.DB
-	questDB       *database.QuestDB
-	ilpClient     *ingestion.ILPClient
-	ibClient      *ib.Client
+	sqliteDB       *database.DB
+	questDB        *database.QuestDB
+	ilpClient      *ingestion.ILPClient
+	ibClient       *ib.Client
 	earningsClient *earnings.Client
 
 	// Worker & scheduling
@@ -59,7 +59,7 @@ type App struct {
 	quit     chan struct{}
 	shutdown chan os.Signal
 
-	mu     sync.Mutex
+	mu      sync.Mutex
 	running bool
 }
 

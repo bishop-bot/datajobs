@@ -35,7 +35,7 @@ func (r *Repository) GetByDateAndSymbols(ctx context.Context, date string, symbo
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, symbol, name, mic, isin, type, hour, status,
+		SELECT id, symbol, name, mic, isin, type, time, status,
 		       eps, eps_estimated, revenue, revenue_estimated,
 		       date, created_at, updated_at
 		FROM stocks_earnings
@@ -51,12 +51,12 @@ func (r *Repository) GetByDateAndSymbols(ctx context.Context, date string, symbo
 	result := make(map[string]*StockEarnings)
 	for rows.Next() {
 		var e StockEarnings
-		var name, mic, isin, typ, hour, status sql.NullString
+		var name, mic, isin, typ, timeVal, status sql.NullString
 		var eps, epsEst sql.NullFloat64
 		var revenue, revenueEst sql.NullInt64
 
 		err := rows.Scan(
-			&e.ID, &e.Symbol, &name, &mic, &isin, &typ, &hour, &status,
+			&e.ID, &e.Symbol, &name, &mic, &isin, &typ, &timeVal, &status,
 			&eps, &epsEst, &revenue, &revenueEst,
 			&e.Date, &e.CreatedAt, &e.UpdatedAt,
 		)
@@ -68,7 +68,7 @@ func (r *Repository) GetByDateAndSymbols(ctx context.Context, date string, symbo
 		e.MIC = mic.String
 		e.ISIN = isin.String
 		e.Type = typ.String
-		e.Hour = Hour(hour.String)
+		e.Time = Time(timeVal.String)
 		e.Status = Status(status.String)
 
 		if eps.Valid {
@@ -99,7 +99,7 @@ func (r *Repository) GetByDateAndSymbols(ctx context.Context, date string, symbo
 func (r *Repository) Upsert(ctx context.Context, e *StockEarnings) error {
 	query := `
 		INSERT INTO stocks_earnings (
-			symbol, name, mic, isin, type, hour, status,
+			symbol, name, mic, isin, type, time, status,
 			eps, eps_estimated, revenue, revenue_estimated, date
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(symbol, date) DO UPDATE SET
@@ -107,7 +107,7 @@ func (r *Repository) Upsert(ctx context.Context, e *StockEarnings) error {
 			mic = excluded.mic,
 			isin = excluded.isin,
 			type = excluded.type,
-			hour = excluded.hour,
+			time = excluded.time,
 			status = excluded.status,
 			eps = excluded.eps,
 			eps_estimated = excluded.eps_estimated,
@@ -117,7 +117,7 @@ func (r *Repository) Upsert(ctx context.Context, e *StockEarnings) error {
 	`
 
 	_, err := r.db.Exec(ctx, query,
-		e.Symbol, e.Name, e.MIC, e.ISIN, e.Type, e.Hour, e.Status,
+		e.Symbol, e.Name, e.MIC, e.ISIN, e.Type, e.Time, e.Status,
 		e.EPS, e.EPSEstimated, e.Revenue, e.RevenueEstimated, e.Date,
 	)
 	if err != nil {
@@ -141,7 +141,7 @@ func (r *Repository) UpsertBatch(ctx context.Context, earnings []*StockEarnings)
 
 	query := `
 		INSERT INTO stocks_earnings (
-			symbol, name, mic, isin, type, hour, status,
+			symbol, name, mic, isin, type, time, status,
 			eps, eps_estimated, revenue, revenue_estimated, date
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(symbol, date) DO UPDATE SET
@@ -149,7 +149,7 @@ func (r *Repository) UpsertBatch(ctx context.Context, earnings []*StockEarnings)
 			mic = excluded.mic,
 			isin = excluded.isin,
 			type = excluded.type,
-			hour = excluded.hour,
+			time = excluded.time,
 			status = excluded.status,
 			eps = excluded.eps,
 			eps_estimated = excluded.eps_estimated,
@@ -167,7 +167,7 @@ func (r *Repository) UpsertBatch(ctx context.Context, earnings []*StockEarnings)
 	inserted := 0
 	for _, e := range earnings {
 		_, err := stmt.ExecContext(ctx,
-			e.Symbol, e.Name, e.MIC, e.ISIN, e.Type, e.Hour, e.Status,
+			e.Symbol, e.Name, e.MIC, e.ISIN, e.Type, e.Time, e.Status,
 			e.EPS, e.EPSEstimated, e.Revenue, e.RevenueEstimated, e.Date,
 		)
 		if err != nil {

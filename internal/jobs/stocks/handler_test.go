@@ -6,14 +6,14 @@ import (
 	"github.com/bishop-bot/datajobs/internal/providers/earnings"
 )
 
-func TestConvertHour(t *testing.T) {
+func TestConvertTime(t *testing.T) {
 	tests := []struct {
 		category string
-		expected Hour
+		expected Time
 	}{
-		{"pre", HourBMO},
-		{"after", HourAMC},
-		{"during", HourDMH},
+		{"pre", TimeBMO},
+		{"after", TimeAMC},
+		{"during", TimeDMH},
 		{"notSupplied", ""},
 		{"unknown", ""},
 		{"", ""},
@@ -21,9 +21,9 @@ func TestConvertHour(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.category, func(t *testing.T) {
-			result := ConvertHour(tt.category)
+			result := ConvertTime(tt.category)
 			if result != tt.expected {
-				t.Errorf("ConvertHour(%q) = %v, want %v", tt.category, result, tt.expected)
+				t.Errorf("ConvertTime(%q) = %v, want %v", tt.category, result, tt.expected)
 			}
 		})
 	}
@@ -39,7 +39,7 @@ func TestEntryToStockEarnings(t *testing.T) {
 		RevenueEstimate: 89000000000,
 	}
 
-	se := entryToStockEarnings(entry, "2026-01-31", HourBMO)
+	se := entryToStockEarnings(entry, "2026-01-31", TimeBMO)
 
 	if se.Symbol != "AAPL" {
 		t.Errorf("expected Symbol AAPL, got %s", se.Symbol)
@@ -50,8 +50,8 @@ func TestEntryToStockEarnings(t *testing.T) {
 	if se.Date != "2026-01-31" {
 		t.Errorf("expected Date 2026-01-31, got %s", se.Date)
 	}
-	if se.Hour != HourBMO {
-		t.Errorf("expected Hour BMO, got %s", se.Hour)
+	if se.Time != TimeBMO {
+		t.Errorf("expected Time BMO, got %s", se.Time)
 	}
 	if se.Status != StatusActual {
 		t.Errorf("expected Status Actual, got %s", se.Status)
@@ -79,7 +79,7 @@ func TestEntryToStockEarningsEstimateOnly(t *testing.T) {
 		// No actual EPS or Revenue
 	}
 
-	se := entryToStockEarnings(entry, "2026-02-01", HourAMC)
+	se := entryToStockEarnings(entry, "2026-02-01", TimeAMC)
 
 	if se.Status != StatusEstimate {
 		t.Errorf("expected Status Estimate, got %s", se.Status)
@@ -120,20 +120,20 @@ func TestConvertResponseToEntities(t *testing.T) {
 	}
 
 	// Check pre-market (BMO)
-	if entities[0].Symbol != "JPM" || entities[0].Hour != HourBMO {
+	if entities[0].Symbol != "JPM" || entities[0].Time != TimeBMO {
 		t.Errorf("unexpected first entity: %+v", entities[0])
 	}
-	if entities[1].Symbol != "WFC" || entities[1].Hour != HourBMO {
+	if entities[1].Symbol != "WFC" || entities[1].Time != TimeBMO {
 		t.Errorf("unexpected second entity: %+v", entities[1])
 	}
 
 	// Check after-market (AMC)
-	if entities[2].Symbol != "AAPL" || entities[2].Hour != HourAMC {
+	if entities[2].Symbol != "AAPL" || entities[2].Time != TimeAMC {
 		t.Errorf("unexpected third entity: %+v", entities[2])
 	}
 
-	// Check not supplied (empty hour)
-	if entities[3].Symbol != "BK" || entities[3].Hour != "" {
+	// Check not supplied (empty time)
+	if entities[3].Symbol != "BK" || entities[3].Time != "" {
 		t.Errorf("unexpected fourth entity: %+v", entities[3])
 	}
 }

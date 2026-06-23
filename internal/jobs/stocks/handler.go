@@ -106,15 +106,15 @@ func convertResponseToEntities(resp *earnings.EarningsCalendarResponse) []*Stock
 
 	// Process pre-market (BMO)
 	for _, entry := range resp.Pre {
-		entities = append(entities, entryToStockEarnings(entry, resp.Date, HourBMO))
+		entities = append(entities, entryToStockEarnings(entry, resp.Date, TimeBMO))
 	}
 
 	// Process after-market (AMC)
 	for _, entry := range resp.After {
-		entities = append(entities, entryToStockEarnings(entry, resp.Date, HourAMC))
+		entities = append(entities, entryToStockEarnings(entry, resp.Date, TimeAMC))
 	}
 
-	// Process not supplied (empty hour)
+	// Process not supplied (empty time)
 	for _, entry := range resp.NotSupplied {
 		entities = append(entities, entryToStockEarnings(entry, resp.Date, ""))
 	}
@@ -123,12 +123,12 @@ func convertResponseToEntities(resp *earnings.EarningsCalendarResponse) []*Stock
 }
 
 // entryToStockEarnings converts an EarningsEntry to a StockEarnings entity.
-func entryToStockEarnings(entry earnings.EarningsEntry, date string, hour Hour) *StockEarnings {
+func entryToStockEarnings(entry earnings.EarningsEntry, date string, timeVal Time) *StockEarnings {
 	e := &StockEarnings{
 		Symbol: entry.Symbol,
 		Name:   entry.Name,
 		Date:   date,
-		Hour:   hour,
+		Time:   timeVal,
 		Status: StatusEstimate, // Default to estimate
 	}
 

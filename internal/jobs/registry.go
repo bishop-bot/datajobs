@@ -5,15 +5,15 @@ import (
 
 	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/ingestion"
-	jobingestion "github.com/bishop-bot/datajobs/internal/jobs/ingestion"
 	"github.com/bishop-bot/datajobs/internal/jobs/historical"
-	"github.com/bishop-bot/datajobs/internal/logging"
+	jobingestion "github.com/bishop-bot/datajobs/internal/jobs/ingestion"
 	"github.com/bishop-bot/datajobs/internal/jobs/monitoring"
 	jobquestdb "github.com/bishop-bot/datajobs/internal/jobs/questdb"
-	"github.com/bishop-bot/datajobs/internal/jobs/system"
 	corporateactions "github.com/bishop-bot/datajobs/internal/jobs/stocks"
-	"github.com/bishop-bot/datajobs/internal/providers/ib"
+	"github.com/bishop-bot/datajobs/internal/jobs/system"
+	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/providers/earnings"
+	"github.com/bishop-bot/datajobs/internal/providers/ib"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 

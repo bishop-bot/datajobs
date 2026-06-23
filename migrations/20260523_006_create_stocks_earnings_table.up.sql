@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS stocks_earnings (
     mic TEXT,
     isin TEXT,
     type TEXT,
-    hour TEXT,
+    time TEXT,
     status TEXT,
     eps REAL,
     eps_estimated REAL,
