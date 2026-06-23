@@ -70,6 +70,11 @@ func earningsSyncHandlerImpl(ctx context.Context, job worker.Job, db *database.D
 		return "", fmt.Errorf("failed to query existing records: %w", err)
 	}
 
+	// Defensive nil check (should never happen due to repository contract)
+	if existing == nil {
+		existing = make(map[string]*StockEarnings)
+	}
+
 	// Filter out existing records (no changes needed)
 	newEarnings := make([]*StockEarnings, 0, len(allEarnings))
 	for _, e := range allEarnings {

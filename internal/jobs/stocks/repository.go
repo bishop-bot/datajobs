@@ -34,8 +34,9 @@ func (r *Repository) GetByDateAndSymbols(ctx context.Context, date string, symbo
 		args[i+1] = sym
 	}
 
+	// Quote reserved keywords: "type" and "time"
 	query := fmt.Sprintf(`
-		SELECT id, symbol, name, mic, isin, type, time, status,
+		SELECT id, symbol, name, mic, isin, "type", "time", status,
 		       eps, eps_estimated, revenue, revenue_estimated,
 		       date, created_at, updated_at
 		FROM stocks_earnings
@@ -97,17 +98,18 @@ func (r *Repository) GetByDateAndSymbols(ctx context.Context, date string, symbo
 
 // Upsert inserts or updates a stock earnings record.
 func (r *Repository) Upsert(ctx context.Context, e *StockEarnings) error {
+	// Quote reserved keywords: "type" and "time"
 	query := `
 		INSERT INTO stocks_earnings (
-			symbol, name, mic, isin, type, time, status,
+			symbol, name, mic, isin, "type", "time", status,
 			eps, eps_estimated, revenue, revenue_estimated, date
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(symbol, date) DO UPDATE SET
 			name = excluded.name,
 			mic = excluded.mic,
 			isin = excluded.isin,
-			type = excluded.type,
-			time = excluded.time,
+			"type" = excluded."type",
+			"time" = excluded."time",
 			status = excluded.status,
 			eps = excluded.eps,
 			eps_estimated = excluded.eps_estimated,
@@ -137,19 +139,19 @@ func (r *Repository) UpsertBatch(ctx context.Context, earnings []*StockEarnings)
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
 
+	// Quote reserved keywords: "type" and "time"
 	query := `
 		INSERT INTO stocks_earnings (
-			symbol, name, mic, isin, type, time, status,
+			symbol, name, mic, isin, "type", "time", status,
 			eps, eps_estimated, revenue, revenue_estimated, date
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(symbol, date) DO UPDATE SET
 			name = excluded.name,
 			mic = excluded.mic,
 			isin = excluded.isin,
-			type = excluded.type,
-			time = excluded.time,
+			"type" = excluded."type",
+			"time" = excluded."time",
 			status = excluded.status,
 			eps = excluded.eps,
 			eps_estimated = excluded.eps_estimated,
@@ -160,11 +162,12 @@ func (r *Repository) UpsertBatch(ctx context.Context, earnings []*StockEarnings)
 
 	stmt, err := tx.PrepareContext(ctx, query)
 	if err != nil {
+		tx.Rollback()
 		return 0, fmt.Errorf("failed to prepare statement: %w", err)
 	}
-	defer stmt.Close()
 
 	inserted := 0
+	var lastErr error
 	for _, e := range earnings {
 		_, err := stmt.ExecContext(ctx,
 			e.Symbol, e.Name, e.MIC, e.ISIN, e.Type, e.Time, e.Status,
@@ -176,13 +179,22 @@ func (r *Repository) UpsertBatch(ctx context.Context, earnings []*StockEarnings)
 				"date", e.Date,
 				"error", err,
 			)
+			lastErr = err
 			continue
 		}
 		inserted++
 	}
 
+	// Close statement before commit/rollback
+	stmt.Close()
+
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+		return inserted, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Return error if all inserts failed
+	if lastErr != nil && inserted == 0 {
+		return 0, fmt.Errorf("all %d earnings records failed to upsert: %w", len(earnings), lastErr)
 	}
 
 	return inserted, nil
