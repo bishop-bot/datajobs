@@ -17,6 +17,10 @@ type MockClient struct {
 	EarningsCalendarResponse *EarningsCalendarResponse
 	EarningsCalendarError    error
 
+	// Economic calendar responses
+	EconomicCalendarResponse *EconomicCalendarResponse
+	EconomicCalendarError    error
+
 	// Call tracking
 	callCount atomic.Int32
 	Calls     []MockCall
@@ -97,6 +101,15 @@ func (m *MockClient) EarningsCalendar(ctx context.Context, date CalendarDate) (*
 		return nil, ErrClientClosed
 	}
 	return m.EarningsCalendarResponse, m.EarningsCalendarError
+}
+
+// EconomicCalendar implements Provider.
+func (m *MockClient) EconomicCalendar(ctx context.Context, params EconomicCalendarParams) (*EconomicCalendarResponse, error) {
+	m.RecordCall("EconomicCalendar", params.Date.Value, params.USMajor)
+	if m.closed {
+		return nil, ErrClientClosed
+	}
+	return m.EconomicCalendarResponse, m.EconomicCalendarError
 }
 
 // Close implements Provider.

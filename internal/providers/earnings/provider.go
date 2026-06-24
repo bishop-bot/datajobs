@@ -11,6 +11,9 @@ type Provider interface {
 	// EarningsCalendar fetches earnings calendar data for a specific date.
 	EarningsCalendar(ctx context.Context, date CalendarDate) (*EarningsCalendarResponse, error)
 
+	// EconomicCalendar fetches economic calendar data for a specific date.
+	EconomicCalendar(ctx context.Context, params EconomicCalendarParams) (*EconomicCalendarResponse, error)
+
 	// Close releases resources.
 	Close() error
 }

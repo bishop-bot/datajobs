@@ -80,6 +80,41 @@ func TestRateLimitedProviderCloseNoOp(t *testing.T) {
 	}
 }
 
+func TestRateLimitedProviderEconomicCalendar(t *testing.T) {
+	// Test that EconomicCalendar applies rate limiting
+	client := &mockProviderWithClose{}
+	rlp := NewRateLimitedProvider(client, 60) // 60 req/min = 1 per second
+
+	ctx := context.Background()
+	params := EconomicCalendarParams{
+		Date:   NewCalendarDate(time.Now()),
+		USMajor: true,
+	}
+
+	// First call should go through immediately
+	_, err := rlp.EconomicCalendar(ctx, params)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Deplete tokens
+	for i := 0; i < 59; i++ {
+		_, _ = rlp.EconomicCalendar(ctx, params)
+	}
+
+	// 61st call should be rate limited
+	start := time.Now()
+	_, err = rlp.EconomicCalendar(ctx, params)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if elapsed < 900*time.Millisecond {
+		t.Errorf("expected rate limit delay >= 0.9s, got %v", elapsed)
+	}
+}
+
 // mockProviderWithClose is a mock provider that implements Close
 type mockProviderWithClose struct {
 	closed bool
@@ -91,6 +126,10 @@ func (m *mockProviderWithClose) Ping(ctx context.Context) error {
 
 func (m *mockProviderWithClose) EarningsCalendar(ctx context.Context, date CalendarDate) (*EarningsCalendarResponse, error) {
 	return &EarningsCalendarResponse{}, nil
+}
+
+func (m *mockProviderWithClose) EconomicCalendar(ctx context.Context, params EconomicCalendarParams) (*EconomicCalendarResponse, error) {
+	return &EconomicCalendarResponse{}, nil
 }
 
 func (m *mockProviderWithClose) Close() error {
@@ -107,6 +146,10 @@ func (m *mockProviderWithoutClose) Ping(ctx context.Context) error {
 
 func (m *mockProviderWithoutClose) EarningsCalendar(ctx context.Context, date CalendarDate) (*EarningsCalendarResponse, error) {
 	return &EarningsCalendarResponse{}, nil
+}
+
+func (m *mockProviderWithoutClose) EconomicCalendar(ctx context.Context, params EconomicCalendarParams) (*EconomicCalendarResponse, error) {
+	return &EconomicCalendarResponse{}, nil
 }
 
 func (m *mockProviderWithoutClose) Close() error {

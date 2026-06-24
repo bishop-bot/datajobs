@@ -75,3 +75,35 @@ type DateRange struct {
 	Start time.Time
 	End   time.Time
 }
+
+// EconomicCalendarResponse represents the API response for the economic calendar endpoint.
+type EconomicCalendarResponse struct {
+	// Events contains economic events for the queried date
+	Events []EconomicEntry `json:"events"`
+}
+
+// EconomicEntry represents a single economic event.
+type EconomicEntry struct {
+	// Country is the country or region name (e.g., "United States")
+	Country string `json:"country"`
+	// EventName is the economic event name (e.g., "PPI")
+	EventName string `json:"eventName"`
+	// Date is the event date in YYYY-MM-DD format
+	Date string `json:"date"`
+	// Time is the event time in ET (e.g., "08:30") or "24H"
+	Time string `json:"time"`
+	// Actual is the actual value (null if not released yet)
+	Actual *string `json:"actual"`
+	// Consensus is the market consensus/forecast (may be null)
+	Consensus *string `json:"consensus"`
+	// Previous is the previous value (may be null)
+	Previous *string `json:"previous"`
+}
+
+// EconomicCalendarParams contains parameters for economic calendar queries.
+type EconomicCalendarParams struct {
+	// Date is the date to query (YYYY-MM-DD or "today", "yesterday", "tomorrow")
+	Date CalendarDate
+	// USMajor if true, returns U.S. major indicators only
+	USMajor bool
+}

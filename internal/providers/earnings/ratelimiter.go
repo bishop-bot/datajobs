@@ -101,3 +101,13 @@ func (p *RateLimitedProvider) Close() error {
 func (p *RateLimitedProvider) Ping(ctx context.Context) error {
 	return p.provider.Ping(ctx)
 }
+
+// EconomicCalendar fetches economic calendar with rate limiting.
+func (p *RateLimitedProvider) EconomicCalendar(ctx context.Context, params EconomicCalendarParams) (*EconomicCalendarResponse, error) {
+	// Apply rate limiting (method handles its own locking)
+	if err := p.limiter.Allow(ctx); err != nil {
+		return nil, err
+	}
+
+	return p.provider.EconomicCalendar(ctx, params)
+}
