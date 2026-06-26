@@ -12,6 +12,8 @@ github.com/bishop-bot/ibapi-go v0.1.1 h1:p9n/lpUx76TRU14Q8xX9zMuGXz2nImhdPwXAOmE
 github.com/bishop-bot/ibapi-go v0.1.1/go.mod h1:lIzNFPg84eSeNYyfhf4cxKpNXpYquU36Ym8OYYlEoa0=
 github.com/bishop-bot/ibgateway-go v0.1.0 h1:E6yhYOfzQmoq34PqOb86HReYmMkz21/c/kfCPK1naKs=
 github.com/bishop-bot/ibgateway-go v0.1.0/go.mod h1:N98D18g6qzFdp0znR+h6rttT9zwPUYWsiBvpqNqwJH8=
+github.com/biter777/countries v1.7.5 h1:MJ+n3+rSxWQdqVJU8eBy9RqcdH6ePPn4PJHocVWUa+Q=
+github.com/biter777/countries v1.7.5/go.mod h1:1HSpZ526mYqKJcpT5Ti1kcGQ0L0SrXWIaptUWjFfv2E=
 github.com/cenkalti/backoff/v4 v4.2.1 h1:y4OZtCnogmCPw98Zjyt5a6+QwPLGkiQsYW5oUqylYbM=
 github.com/cenkalti/backoff/v4 v4.2.1/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=

@@ -200,6 +200,79 @@ func (c *Client) EarningsCalendar(ctx context.Context, date CalendarDate) (*Earn
 	return &result, nil
 }
 
+// EconomicCalendar fetches economic calendar data for a specific date.
+// The date can be a specific date string (YYYY-MM-DD) or relative values like "today", "yesterday", "tomorrow".
+// If params.USMajor is true, returns only U.S. major indicators.
+func (c *Client) EconomicCalendar(ctx context.Context, params EconomicCalendarParams) (*EconomicCalendarResponse, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.closed {
+		return nil, ErrClientClosed
+	}
+
+	logging.Info("fetching economic calendar",
+		"date", params.Date.Value,
+		"usMajor", params.USMajor,
+		"baseURL", c.baseURL,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.buildURL("/v1/calendar/economic"), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	queryParams := url.Values{
+		"date":   {params.Date.Value},
+		"apikey": {c.apiKey},
+	}
+	if params.USMajor {
+		queryParams.Set("usmajor", "true")
+	}
+	req.URL.RawQuery = queryParams.Encode()
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		logging.Error("economic calendar request failed",
+			"date", params.Date.Value,
+			"error", err.Error(),
+			"baseURL", c.baseURL,
+		)
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		apiErr := &APIError{StatusCode: resp.StatusCode}
+		logging.Error("economic calendar API error",
+			"date", params.Date.Value,
+			"statusCode", resp.StatusCode,
+			"baseURL", c.baseURL,
+		)
+		return nil, apiErr
+	}
+
+	var events []EconomicEntry
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		logging.Error("failed to decode economic calendar response",
+			"date", params.Date.Value,
+			"error", err.Error(),
+		)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	result := &EconomicCalendarResponse{
+		Events: events,
+	}
+
+	logging.Info("economic calendar fetched",
+		"date", params.Date.Value,
+		"events", len(events),
+	)
+
+	return result, nil
+}
+
 // buildURL constructs the full URL for an endpoint.
 func (c *Client) buildURL(path string) string {
 	return c.baseURL + path
