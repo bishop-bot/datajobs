@@ -116,6 +116,7 @@ jobs:
     type: "market_data"
     handler: "historical_data"
     enabled: false
+    audit: true  # Enable audit logging for this job
     timeout: 7200
     retry:
       maxAttempts: 2
@@ -138,6 +139,7 @@ jobs:
     type: "corporate_actions"
     handler: "earnings_sync"
     enabled: false
+    audit: true  # Enable audit logging for this job
     timeout: 3600
     retry:
       maxAttempts: 3
@@ -154,6 +156,7 @@ jobs:
     type: "economic_calendar"
     handler: "economic_calendar_sync"
     enabled: false
+    audit: true  # Enable audit logging for this job
     timeout: 300
     retry:
       maxAttempts: 3

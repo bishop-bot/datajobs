@@ -89,6 +89,7 @@ type JobConfig struct {
 	Cron     string                 `yaml:"cron" env:"JOB_CRON"`
 	Type     string                 `yaml:"type"`
 	Enabled  bool                   `yaml:"enabled" env:"JOB_ENABLED"`
+	Audit    bool                   `yaml:"audit" env:"JOB_AUDIT"`   // Enable audit logging for this job
 	Retry    RetryConfig            `yaml:"retry"`
 	Handler  string                 `yaml:"handler" env:"JOB_HANDLER"`
 	Timeout  int                    `yaml:"timeout" env:"JOB_TIMEOUT"` // seconds
@@ -303,6 +304,7 @@ func setDefaults(cfg *Config) {
 		zeroInt(&cfg.Jobs[i].Retry.InitialDelay, 1000)
 		zeroInt(&cfg.Jobs[i].Retry.MaxDelay, 60000)
 		zeroFloat(&cfg.Jobs[i].Retry.Multiplier, 2.0)
+		// Audit defaults to false (opt-in)
 	}
 }
 
