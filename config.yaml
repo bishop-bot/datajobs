@@ -148,6 +148,21 @@ jobs:
       description: "Syncs stock earnings data from Earnings API to SQLite"
       lookForwardDays: 30  # Number of days ahead to sync earnings (default: 30)
 
+  - id: "economic-calendar-sync"
+    name: "Economic Calendar Daily Sync"
+    cron: "0 5 * * *"  # Daily at 05:00 HKT
+    type: "economic_calendar"
+    handler: "economic_calendar_sync"
+    enabled: false
+    timeout: 300
+    retry:
+      maxAttempts: 3
+      initialDelay: 1000
+      maxDelay: 60000
+      multiplier: 2.0
+    metadata:
+      description: "Syncs economic calendar events from Earnings API to SQLite"
+
 metrics:
   enabled: true
   path: "/metrics"

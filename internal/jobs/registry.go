@@ -5,6 +5,7 @@ import (
 
 	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/ingestion"
+	"github.com/bishop-bot/datajobs/internal/jobs/calendar"
 	"github.com/bishop-bot/datajobs/internal/jobs/historical"
 	jobingestion "github.com/bishop-bot/datajobs/internal/jobs/ingestion"
 	"github.com/bishop-bot/datajobs/internal/jobs/monitoring"
@@ -99,6 +100,17 @@ func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqlit
 		pool.RegisterHandler("earnings_sync", corporateactions.HandlerWithDeps(sqliteDB, earningsProvider))
 	} else {
 		logging.Warn("earnings_sync handler not registered",
+			"sqliteDB_nil", sqliteDB == nil,
+			"earningsProvider_nil", earningsProvider == nil,
+			"hint", "ensure SQLite and Earnings provider are properly configured",
+		)
+	}
+
+	// Register economic calendar sync handler
+	if sqliteDB != nil && earningsProvider != nil {
+		pool.RegisterHandler("economic_calendar_sync", calendar.HandlerWithDeps(sqliteDB, earningsProvider))
+	} else {
+		logging.Warn("economic_calendar_sync handler not registered",
 			"sqliteDB_nil", sqliteDB == nil,
 			"earningsProvider_nil", earningsProvider == nil,
 			"hint", "ensure SQLite and Earnings provider are properly configured",
