@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/bishop-bot/datajobs/internal/audit"
 	"github.com/bishop-bot/datajobs/internal/config"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/metrics"
@@ -82,6 +83,11 @@ type Pool struct {
 	mu          sync.Mutex
 	running     bool
 	handlersMu  sync.RWMutex // Protects handlers map
+
+	// Audit logging
+	auditLogger *audit.Logger
+	jobConfigs  map[string]*config.JobConfig // Job configs for audit check
+	configsMu   sync.RWMutex                // Protects jobConfigs
 }
 
 // MaxDeadLetterSize is the maximum number of dead letter entries to keep.
@@ -103,6 +109,7 @@ func NewPool(cfg config.WorkerConfig, m *metrics.Metrics) *Pool {
 		deadLetter: make(chan DeadLetterJob, cfg.QueueCapacity),
 		deadLetterQ: make([]DeadLetterJob, 0),
 		stopCh:     make(chan struct{}),
+		jobConfigs: make(map[string]*config.JobConfig),
 	}
 
 	m.SetWorkerPoolSize(cfg.PoolSize)
@@ -116,6 +123,32 @@ func NewPool(cfg config.WorkerConfig, m *metrics.Metrics) *Pool {
 	go pool.processDeadLetter()
 
 	return pool
+}
+
+// SetAuditLogger sets the audit logger for the pool.
+func (p *Pool) SetAuditLogger(logger *audit.Logger) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.auditLogger = logger
+}
+
+// SetJobConfigs sets the job configurations for audit checks.
+func (p *Pool) SetJobConfigs(configs map[string]*config.JobConfig) {
+	p.configsMu.Lock()
+	defer p.configsMu.Unlock()
+	p.jobConfigs = configs
+}
+
+// shouldAudit checks if a job should be audited based on its config.
+func (p *Pool) shouldAudit(jobID string) bool {
+	p.configsMu.RLock()
+	defer p.configsMu.RUnlock()
+
+	cfg, ok := p.jobConfigs[jobID]
+	if !ok {
+		return false
+	}
+	return cfg.Audit
 }
 
 // startWorkers starts the fixed number of worker goroutines.
@@ -224,6 +257,23 @@ func (p *Pool) executeJob(job Job, attempt int) {
 
 	logger := logging.FromContext(ctx).With("job_id", job.ID, "attempt", attemptNum+1)
 
+	// Check if job should be audited
+	shouldAudit := p.shouldAudit(job.ID)
+
+	// Start audit logging if enabled
+	var auditComplete func(map[string]interface{})
+	var auditFail func(error)
+	if shouldAudit && p.auditLogger != nil {
+		// job.Name is empty (only job.ID is set), pass empty string for now
+		complete, fail, err := p.auditLogger.Start(ctx, job.ID, "", job.Handler, job.Metadata, attemptNum+1)
+		if err != nil {
+			logger.Warn("failed to start audit logging", "error", err)
+		} else {
+			auditComplete = complete
+			auditFail = fail
+		}
+	}
+
 	// Get handler (thread-safe read)
 	p.handlersMu.RLock()
 	handler, ok := p.handlers[job.Handler]
@@ -231,6 +281,9 @@ func (p *Pool) executeJob(job Job, attempt int) {
 
 	if !ok {
 		logger.Error("handler not found", "handler", job.Handler)
+		if auditFail != nil {
+			auditFail(fmt.Errorf("handler not found: %s", job.Handler))
+		}
 		p.sendToDeadLetter(ctx, job, "handler_not_found", "handler not registered")
 		// Job left queue, queue depth is now len(p.jobChan)
 		return
@@ -254,6 +307,11 @@ func (p *Pool) executeJob(job Job, attempt int) {
 	if err != nil {
 		p.metrics.RecordJobEnd(ctx, job.ID, "failure")
 		logger.Error("job failed", "error", err.Error(), "output", output)
+
+		// Record audit failure
+		if auditFail != nil {
+			auditFail(err)
+		}
 
 		// Check if we should retry (use job.Attempt which persists across retries)
 		if job.Attempt < job.Retry.MaxAttempts-1 {
@@ -326,7 +384,27 @@ func (p *Pool) executeJob(job Job, attempt int) {
 
 	p.metrics.RecordJobEnd(ctx, job.ID, "success")
 	logger.Info("job completed", "output", output)
+
+	// Record audit success with results
+	if auditComplete != nil {
+		auditComplete(parseJobResults(output))
+	}
+
 	// Job left queue (completed), queue depth is now len(p.jobChan)
+}
+
+// parseJobResults attempts to parse job output into a structured result map.
+// The job output format is expected to be key=value pairs separated by commas.
+func parseJobResults(output string) map[string]interface{} {
+	result := make(map[string]interface{})
+	if output == "" {
+		return result
+	}
+	// Simple parsing: "key1=val1, key2=val2, ..."
+	// This handles the current output format from handlers
+	// Format: "synced date=2026-06-26: total=100, upserted=50, ..."
+	result["output"] = output
+	return result
 }
 
 func (p *Pool) sendToDeadLetter(ctx context.Context, job Job, reason, errMsg string) {

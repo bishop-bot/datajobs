@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/bishop-bot/datajobs/internal/audit"
 	"github.com/bishop-bot/datajobs/internal/config"
 	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/handlers"
@@ -48,6 +49,9 @@ type App struct {
 	// Worker & scheduling
 	pool      *worker.Pool
 	scheduler *scheduler.Scheduler
+
+	// Audit logging
+	auditLogger *audit.Logger
 
 	// Health monitoring
 	healthServer *health.Server
@@ -307,6 +311,17 @@ func (a *App) EarningsClient() *earnings.Client {
 func (a *App) initWorkerPool() {
 	a.pool = worker.NewPool(a.cfg.Worker, a.metrics)
 
+	// Initialize audit logger with SQLite database
+	a.auditLogger = audit.NewLogger(a.sqliteDB)
+	a.pool.SetAuditLogger(a.auditLogger)
+
+	// Build job configs map for audit checks
+	jobConfigs := make(map[string]*config.JobConfig)
+	for i := range a.cfg.Jobs {
+		jobConfigs[a.cfg.Jobs[i].ID] = &a.cfg.Jobs[i]
+	}
+	a.pool.SetJobConfigs(jobConfigs)
+
 	// Register built-in handlers
 	for name, handler := range jobs.BuiltInHandlers() {
 		a.pool.RegisterHandler(name, handler)
@@ -352,9 +367,12 @@ func (a *App) initHTTPServer() {
 	marketDataHandler := handlers.NewMarketDataHandler(a.pool, a.ibClient, a.sqliteDB, a.questDB)
 	instrumentsHandler := handlers.NewInstrumentsHandler(a.sqliteDB)
 
+	// Create audit handler
+	auditHandler := handlers.NewAuditHandler(a.auditLogger)
+
 	// Setup router
 	a.router = setupRouter(a.cfg, a.healthServer, a.metrics,
-		jobsHandler, systemHandler, questdbHandler, marketDataHandler, instrumentsHandler)
+		jobsHandler, systemHandler, questdbHandler, marketDataHandler, instrumentsHandler, auditHandler)
 
 	// Create server
 	addr := fmt.Sprintf("%s:%d", a.cfg.Server.Host, a.cfg.Server.Port)
@@ -377,6 +395,7 @@ func setupRouter(
 	questdbHandler *handlers.QuestDBHandler,
 	marketDataHandler *handlers.MarketDataHandler,
 	instrumentsHandler *handlers.InstrumentsHandler,
+	auditHandler *handlers.AuditHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -425,6 +444,14 @@ func setupRouter(
 		// Instruments import endpoints
 		r.Post("/instruments/import", instrumentsHandler.ImportInstrumentsCSV)
 		r.Post("/instruments/import-path", instrumentsHandler.ImportInstrumentsFromPath)
+
+		// Audit log endpoints
+		r.Route("/audit", func(r chi.Router) {
+			r.Get("/runs", auditHandler.ListRuns)
+			r.Get("/runs/stats", auditHandler.GetStats)
+			r.Get("/jobs/{jobId}/runs", auditHandler.GetJobRuns)
+			r.Get("/runs/{runId}", auditHandler.GetRun)
+		})
 	})
 
 	return r
