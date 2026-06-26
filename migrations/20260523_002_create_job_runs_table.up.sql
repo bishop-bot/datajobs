@@ -4,7 +4,6 @@
 CREATE TABLE IF NOT EXISTS job_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id TEXT NOT NULL,
-    job_name TEXT,
     started_at DATETIME NOT NULL,
     completed_at DATETIME,
     status TEXT NOT NULL,              -- 'running', 'success', 'failure', 'cancelled'

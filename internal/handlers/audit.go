@@ -114,7 +114,6 @@ func (h *AuditHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	responseData := map[string]interface{}{
 		"id":            run.ID,
 		"job_id":        run.JobID,
-		"job_name":      run.JobName,
 		"started_at":    run.StartedAt,
 		"completed_at":  run.CompletedAt,
 		"status":        run.Status,

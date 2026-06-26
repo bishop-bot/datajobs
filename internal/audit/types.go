@@ -16,7 +16,6 @@ const (
 type JobRun struct {
 	ID           int64        `json:"id"`
 	JobID        string       `json:"job_id"`
-	JobName      string       `json:"job_name,omitempty"`
 	StartedAt    time.Time    `json:"started_at"`
 	CompletedAt  *time.Time   `json:"completed_at,omitempty"`
 	Status       JobRunStatus `json:"status"`

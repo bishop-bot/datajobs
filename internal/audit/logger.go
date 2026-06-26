@@ -34,7 +34,7 @@ func NewLoggerWithRetention(db *database.DB, retentionDays int) *Logger {
 }
 
 // Start begins tracking a job run. Returns functions to complete or fail the run.
-func (l *Logger) Start(ctx context.Context, jobID, jobName, handler string, metadata map[string]interface{}, attempt int) (complete func(results map[string]interface{}), fail func(err error), err error) {
+func (l *Logger) Start(ctx context.Context, jobID, handler string, metadata map[string]interface{}, attempt int) (complete func(results map[string]interface{}), fail func(err error), err error) {
 	// Serialize parameters to JSON
 	paramsJSON, err := json.Marshal(metadata)
 	if err != nil {
@@ -43,14 +43,13 @@ func (l *Logger) Start(ctx context.Context, jobID, jobName, handler string, meta
 
 	query := `
 		INSERT INTO job_runs (
-			job_id, job_name, started_at, status, parameters, attempt, handler
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
+			job_id, started_at, status, parameters, attempt, handler
+		) VALUES (?, ?, ?, ?, ?, ?)
 	`
 
 	now := time.Now().UTC()
 	result, err := l.db.Exec(ctx, query,
 		jobID,
-		jobName,
 		now,
 		StatusRunning,
 		string(paramsJSON),
@@ -185,7 +184,7 @@ func (l *Logger) GetByJobID(ctx context.Context, query JobRunQuery) ([]*JobRun, 
 	}
 
 	sqlQuery := `
-		SELECT id, job_id, job_name, started_at, completed_at, status, 
+		SELECT id, job_id, started_at, completed_at, status, 
 		       error_message, duration_ms, parameters, results, attempt, handler, created_at
 		FROM job_runs
 		WHERE 1=1
@@ -228,7 +227,7 @@ func (l *Logger) GetRecent(ctx context.Context, limit int) ([]*JobRun, error) {
 // GetByID retrieves a single job run by ID.
 func (l *Logger) GetByID(ctx context.Context, runID int64) (*JobRun, error) {
 	query := `
-		SELECT id, job_id, job_name, started_at, completed_at, status, 
+		SELECT id, job_id, started_at, completed_at, status, 
 		       error_message, duration_ms, parameters, results, attempt, handler, created_at
 		FROM job_runs
 		WHERE id = ?
@@ -256,11 +255,11 @@ func (l *Logger) queryRuns(ctx context.Context, query string, args ...interface{
 	for rows.Next() {
 		var r JobRun
 		var completedAt sql.NullTime
-		var jobName, errorMsg, params, results, handler sql.NullString
+		var errorMsg, params, results, handler sql.NullString
 		var durationMs sql.NullInt64
 
 		err := rows.Scan(
-			&r.ID, &r.JobID, &jobName, &r.StartedAt, &completedAt,
+			&r.ID, &r.JobID, &r.StartedAt, &completedAt,
 			&r.Status, &errorMsg, &durationMs, &params, &results,
 			&r.Attempt, &handler, &r.CreatedAt,
 		)
@@ -270,9 +269,6 @@ func (l *Logger) queryRuns(ctx context.Context, query string, args ...interface{
 
 		if completedAt.Valid {
 			r.CompletedAt = &completedAt.Time
-		}
-		if jobName.Valid {
-			r.JobName = jobName.String
 		}
 		if errorMsg.Valid {
 			r.ErrorMessage = errorMsg.String

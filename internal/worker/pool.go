@@ -264,8 +264,7 @@ func (p *Pool) executeJob(job Job, attempt int) {
 	var auditComplete func(map[string]interface{})
 	var auditFail func(error)
 	if shouldAudit && p.auditLogger != nil {
-		// job.Name is empty (only job.ID is set), pass empty string for now
-		complete, fail, err := p.auditLogger.Start(ctx, job.ID, "", job.Handler, job.Metadata, attemptNum+1)
+		complete, fail, err := p.auditLogger.Start(ctx, job.ID, job.Handler, job.Metadata, attemptNum+1)
 		if err != nil {
 			logger.Warn("failed to start audit logging", "error", err)
 		} else {
