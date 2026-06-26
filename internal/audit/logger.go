@@ -95,10 +95,10 @@ func (l *Logger) complete(ctx context.Context, runID int64, jobID string, status
 	}
 
 	completedAt := time.Now().UTC()
-	durationMs := completedAt.Sub(time.Now().UTC()).Milliseconds()
 
-	// Get duration by querying the record
+	// Get started_at from the record to calculate duration
 	var startedAt time.Time
+	durationMs := int64(0)
 	err = l.db.QueryRow(ctx, "SELECT started_at FROM job_runs WHERE id = ?", runID).Scan(&startedAt)
 	if err == nil {
 		durationMs = int64(completedAt.Sub(startedAt).Milliseconds())
