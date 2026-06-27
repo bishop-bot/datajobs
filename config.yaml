@@ -38,6 +38,12 @@ earnings:
   timeout: 30s
   rateLimitPerMin: 30  # Requests per minute (default: 30, max suggested: 60)
 
+# Financial Modeling Prep API
+fmp:
+  baseURL: "https://financialmodelingprep.com/api"
+  timeout: 30s
+  rateLimitPerMin: 30  # Requests per minute (default: 30)
+
 jobs:
   - id: "bulk-es-ingest"
     name: "Bulk ES Futures Data Ingest"

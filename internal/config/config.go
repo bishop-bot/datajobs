@@ -19,6 +19,7 @@ type Config struct {
 	QuestDB   QuestDBConfig   `yaml:"questdb"`
 	IB        IBConfig        `yaml:"ib"`
 	Earnings  EarningsConfig  `yaml:"earnings"`
+	FMP       FMPConfig       `yaml:"fmp"`
 	Jobs      []JobConfig     `yaml:"jobs"`
 	Metrics   MetricsConfig   `yaml:"metrics"`
 	Tracing   TracingConfig   `yaml:"tracing"`
@@ -80,6 +81,13 @@ type EarningsConfig struct {
 	BaseURL         string        `yaml:"baseURL" env:"EARNINGS_BASE_URL"`
 	Timeout         time.Duration `yaml:"timeout" env:"EARNINGS_TIMEOUT"`
 	RateLimitPerMin int           `yaml:"rateLimitPerMin" env:"EARNINGS_RATE_LIMIT_PER_MIN"` // Requests per minute (default: 30)
+}
+
+// FMPConfig holds Financial Modeling Prep API settings.
+type FMPConfig struct {
+	BaseURL         string        `yaml:"baseURL" env:"FMP_BASE_URL"`
+	Timeout         time.Duration `yaml:"timeout" env:"FMP_TIMEOUT"`
+	RateLimitPerMin int           `yaml:"rateLimitPerMin" env:"FMP_RATE_LIMIT_PER_MIN"` // Requests per minute (default: 30)
 }
 
 // JobConfig holds per-job configuration.
@@ -286,6 +294,11 @@ func setDefaults(cfg *Config) {
 	missingString(&cfg.Earnings.BaseURL, "https://api.earningsapi.com")
 	zeroDuration(&cfg.Earnings.Timeout, 30*time.Second)
 	zeroInt(&cfg.Earnings.RateLimitPerMin, 30) // Default to 30 requests per minute (half of 60)
+
+	// FMP defaults
+	missingString(&cfg.FMP.BaseURL, "https://financialmodelingprep.com/api")
+	zeroDuration(&cfg.FMP.Timeout, 30*time.Second)
+	zeroInt(&cfg.FMP.RateLimitPerMin, 30) // Default to 30 requests per minute
 
 	// Metrics defaults
 	missingString(&cfg.Metrics.Path, "/metrics")

@@ -1,4 +1,4 @@
-package earnings
+package fmp
 
 import (
 	"context"
@@ -6,13 +6,13 @@ import (
 	"github.com/bishop-bot/datajobs/internal/ratelimiter"
 )
 
-// RateLimitedProvider wraps an earnings.Provider with rate limiting.
+// RateLimitedProvider wraps an fmp.Provider with rate limiting.
 type RateLimitedProvider struct {
 	provider Provider
 	limiter  *ratelimiter.TokenBucket
 }
 
-// NewRateLimitedProvider creates a new rate-limited earnings provider.
+// NewRateLimitedProvider creates a new rate-limited FMP provider.
 func NewRateLimitedProvider(provider Provider, requestsPerMin int) *RateLimitedProvider {
 	return &RateLimitedProvider{
 		provider: provider,
@@ -20,24 +20,20 @@ func NewRateLimitedProvider(provider Provider, requestsPerMin int) *RateLimitedP
 	}
 }
 
-// EarningsCalendar fetches earnings calendar with rate limiting.
-func (p *RateLimitedProvider) EarningsCalendar(ctx context.Context, date CalendarDate) (*EarningsCalendarResponse, error) {
-	// Apply rate limiting (method handles its own locking)
+// FinancialRatios fetches financial ratios with rate limiting.
+func (p *RateLimitedProvider) FinancialRatios(ctx context.Context, symbol string, period string) (*FinancialRatiosResponse, error) {
 	if err := p.limiter.Allow(ctx); err != nil {
 		return nil, err
 	}
-
-	return p.provider.EarningsCalendar(ctx, date)
+	return p.provider.FinancialRatios(ctx, symbol, period)
 }
 
-// EconomicCalendar fetches economic calendar with rate limiting.
-func (p *RateLimitedProvider) EconomicCalendar(ctx context.Context, params EconomicCalendarParams) (*EconomicCalendarResponse, error) {
-	// Apply rate limiting (method handles its own locking)
+// KeyMetrics fetches key metrics with rate limiting.
+func (p *RateLimitedProvider) KeyMetrics(ctx context.Context, symbol string, period string) (*KeyMetricsResponse, error) {
 	if err := p.limiter.Allow(ctx); err != nil {
 		return nil, err
 	}
-
-	return p.provider.EconomicCalendar(ctx, params)
+	return p.provider.KeyMetrics(ctx, symbol, period)
 }
 
 // Close implements Provider.Close if the underlying provider supports it.
