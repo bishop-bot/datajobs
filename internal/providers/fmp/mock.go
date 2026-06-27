@@ -14,7 +14,7 @@ type MockClient struct {
 
 	// Financial ratios responses
 	FinancialRatiosResponse *FinancialRatiosResponse
-	FinancialRatiosError    error
+	FinancialRatiosError   error
 
 	// Key metrics responses
 	KeyMetricsResponse *KeyMetricsResponse

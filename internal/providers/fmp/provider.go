@@ -9,9 +9,11 @@ type Provider interface {
 	Ping(ctx context.Context) error
 
 	// FinancialRatios fetches financial ratios for a symbol.
+	// period can be "annual", "quarter", or "ttm" (trailing twelve months).
 	FinancialRatios(ctx context.Context, symbol string, period string) (*FinancialRatiosResponse, error)
 
 	// KeyMetrics fetches key financial metrics for a symbol.
+	// period can be "annual", "quarter", or "ttm" (trailing twelve months).
 	KeyMetrics(ctx context.Context, symbol string, period string) (*KeyMetricsResponse, error)
 
 	// Close releases resources.
