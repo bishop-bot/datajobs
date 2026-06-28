@@ -1,5 +1,5 @@
 -- Migration: Create watchlists table
--- Version: 009
+-- Version: 008
 
 CREATE TABLE IF NOT EXISTS watchlists (
     id TEXT PRIMARY KEY,

@@ -52,22 +52,12 @@ func (h *JobsHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateJobRequest is the request body for creating a job.
-type CreateJobRequest struct {
-	ID       string                 `json:"id"`
-	Name     string                 `json:"name"`
-	Cron     string                 `json:"cron"`
-	Type     string                 `json:"type"`
-	Handler  string                 `json:"handler"`
-	Enabled  bool                   `json:"enabled"`
-	Timeout  int                    `json:"timeout"`
-	Retry    config.RetryConfig     `json:"retry"`
-	Metadata map[string]interface{} `json:"metadata"`
-}
-
 // CreateJob handles POST /api/v1/jobs.
 func (h *JobsHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
-	var req CreateJobRequest
+	var req struct {
+		CreateJobRequest
+		Retry config.RetryConfig `json:"retry"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondJSON(w, http.StatusBadRequest, Response{
 			Success: false,
@@ -76,11 +66,8 @@ func (h *JobsHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.ID == "" {
-		respondJSON(w, http.StatusBadRequest, Response{
-			Success: false,
-			Error:   "job ID is required",
-		})
+	if err := validate.Struct(req.CreateJobRequest); err != nil {
+		respondValidationError(w, err)
 		return
 	}
 
@@ -120,16 +107,6 @@ func (h *JobsHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateJobRequest is the request body for updating a job.
-type UpdateJobRequest struct {
-	Name     *string               `json:"name,omitempty"`
-	Cron     *string               `json:"cron,omitempty"`
-	Handler  *string               `json:"handler,omitempty"`
-	Enabled  *bool                 `json:"enabled,omitempty"`
-	Timeout  *int                  `json:"timeout,omitempty"`
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
-}
-
 // UpdateJob handles PUT /api/v1/jobs/:id.
 func (h *JobsHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("id")
@@ -140,6 +117,11 @@ func (h *JobsHandler) UpdateJob(w http.ResponseWriter, r *http.Request) {
 			Success: false,
 			Error:   "invalid request body",
 		})
+		return
+	}
+
+	if err := validate.Struct(req); err != nil {
+		respondValidationError(w, err)
 		return
 	}
 
