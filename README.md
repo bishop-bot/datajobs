@@ -9,6 +9,7 @@ A production-grade Go server for scheduled bulk data ingestion and incremental d
 - **Exponential backoff** with configurable retry limits
 - **Dead letter queue** for failed jobs
 - **Job audit logging** with 90-day retention
+- **Watchlists** for managing symbol collections
 - **Prometheus metrics** at `/metrics`
 - **OpenTelemetry tracing** for distributed observability
 - **Structured JSON logging** with request correlation IDs
@@ -83,6 +84,14 @@ See `config.yaml` for full configuration documentation.
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/api/v1/watchlists` | List watchlists |
+| `POST` | `/api/v1/watchlists` | Create watchlist |
+| `GET` | `/api/v1/watchlists/{id}` | Get watchlist |
+| `PUT` | `/api/v1/watchlists/{id}` | Update watchlist |
+| `DELETE` | `/api/v1/watchlists/{id}` | Delete watchlist |
+| `GET` | `/api/v1/watchlists/{id}/symbols` | Get symbols |
+| `POST` | `/api/v1/watchlists/{id}/symbols` | Add symbol |
+| `DELETE` | `/api/v1/watchlists/{id}/symbols/{symbol}` | Remove symbol |
 | `GET` | `/api/v1/audit/runs` | List all job runs |
 | `GET` | `/api/v1/audit/runs/stats` | Get audit statistics |
 | `GET` | `/api/v1/audit/jobs/{id}/runs` | Get runs for a specific job |
