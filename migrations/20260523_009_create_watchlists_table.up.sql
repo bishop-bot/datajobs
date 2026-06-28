@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS watchlists (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
-    owner TEXT NOT NULL,
+    owner TEXT,
     is_public BOOLEAN DEFAULT true,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
