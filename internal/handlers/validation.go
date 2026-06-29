@@ -103,9 +103,9 @@ type UpdateWatchlistRequest struct {
 
 // AddSymbolRequest is the request body for adding a symbol to a watchlist.
 type AddSymbolRequest struct {
-	Symbol   string `json:"symbol"  validate:"required,min=1,max=20"`
-	Note     string `json:"note"    validate:"max=500"`
-	Position int    `json:"position" validate:"gte=0"`
+	Symbol   string `json:"symbol"   validate:"required,min=1,max=20"`
+	Note     string `json:"note"     validate:"omitempty,max=500"`
+	Position *int   `json:"position" validate:"omitempty,gte=0"` // optional, nil means auto-assign at end
 }
 
 // CreateJobRequest is the request body for creating a job.

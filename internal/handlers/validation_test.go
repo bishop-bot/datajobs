@@ -176,6 +176,7 @@ func TestUpdateWatchlistRequest_Validation(t *testing.T) {
 
 func TestAddSymbolRequest_Validation(t *testing.T) {
 	negativePos := -1
+	validPos := 5
 
 	tests := []struct {
 		name       string
@@ -185,9 +186,16 @@ func TestAddSymbolRequest_Validation(t *testing.T) {
 		{
 			name: "valid request",
 			request: AddSymbolRequest{
+				Symbol: "AAPL",
+				Note:   "Apple Inc",
+			},
+			wantErrors: nil,
+		},
+		{
+			name: "valid request with position",
+			request: AddSymbolRequest{
 				Symbol:   "AAPL",
-				Note:     "Apple Inc",
-				Position: 0,
+				Position: &validPos,
 			},
 			wantErrors: nil,
 		},
@@ -209,7 +217,7 @@ func TestAddSymbolRequest_Validation(t *testing.T) {
 			name: "negative position",
 			request: AddSymbolRequest{
 				Symbol:   "AAPL",
-				Position: negativePos,
+				Position: &negativePos,
 			},
 			wantErrors: []string{"position must be greater than or equal to 0"},
 		},

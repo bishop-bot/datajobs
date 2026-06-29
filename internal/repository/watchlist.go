@@ -57,7 +57,7 @@ type AddSymbolInput struct {
 	WatchlistID string `json:"watchlist_id"`
 	Symbol      string `json:"symbol"`
 	Note        string `json:"note,omitempty"`
-	Position    int    `json:"position"`
+	Position    *int   `json:"position"` // optional, nil means auto-assign at end
 }
 
 // WatchlistRepository handles watchlist database operations.
@@ -233,7 +233,8 @@ func (r *WatchlistRepository) Delete(ctx context.Context, id string) error {
 func (r *WatchlistRepository) GetSymbols(ctx context.Context, watchlistID string) ([]WatchlistSymbol, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT watchlist_id, symbol, note, position, added_at
-		FROM watchlist_symbols WHERE watchlist_id = ? ORDER BY position ASC
+		FROM watchlist_symbols WHERE watchlist_id = ?
+		ORDER BY COALESCE(position, 2147483647) ASC, added_at ASC
 	`, watchlistID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query symbols: %w", err)
@@ -244,11 +245,15 @@ func (r *WatchlistRepository) GetSymbols(ctx context.Context, watchlistID string
 	for rows.Next() {
 		var s WatchlistSymbol
 		var note sql.NullString
-		if err := rows.Scan(&s.WatchlistID, &s.Symbol, &note, &s.Position, &s.AddedAt); err != nil {
+		var position sql.NullInt64
+		if err := rows.Scan(&s.WatchlistID, &s.Symbol, &note, &position, &s.AddedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan symbol: %w", err)
 		}
 		if note.Valid {
 			s.Note = note.String
+		}
+		if position.Valid {
+			s.Position = int(position.Int64)
 		}
 		symbols = append(symbols, s)
 	}
