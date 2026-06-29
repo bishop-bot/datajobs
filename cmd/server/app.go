@@ -366,13 +366,14 @@ func (a *App) initHTTPServer() {
 	questdbHandler := handlers.NewQuestDBHandler(a.questDB)
 	marketDataHandler := handlers.NewMarketDataHandler(a.pool, a.ibClient, a.sqliteDB, a.questDB)
 	instrumentsHandler := handlers.NewInstrumentsHandler(a.sqliteDB)
+	watchlistHandler := handlers.NewWatchlistHandler(handlers.NewWatchlistRepository(a.sqliteDB))
 
 	// Create audit handler
 	auditHandler := handlers.NewAuditHandler(a.auditLogger)
 
 	// Setup router
 	a.router = setupRouter(a.cfg, a.healthServer, a.metrics,
-		jobsHandler, systemHandler, questdbHandler, marketDataHandler, instrumentsHandler, auditHandler)
+		jobsHandler, systemHandler, questdbHandler, marketDataHandler, instrumentsHandler, auditHandler, watchlistHandler)
 
 	// Create server
 	addr := fmt.Sprintf("%s:%d", a.cfg.Server.Host, a.cfg.Server.Port)
@@ -396,6 +397,7 @@ func setupRouter(
 	marketDataHandler *handlers.MarketDataHandler,
 	instrumentsHandler *handlers.InstrumentsHandler,
 	auditHandler *handlers.AuditHandler,
+	watchlistHandler *handlers.WatchlistHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -451,6 +453,19 @@ func setupRouter(
 			r.Get("/runs/stats", auditHandler.GetStats)
 			r.Get("/jobs/{jobId}/runs", auditHandler.GetJobRuns)
 			r.Get("/runs/{runId}", auditHandler.GetRun)
+		})
+
+		// Watchlist endpoints
+		r.Route("/watchlists", func(r chi.Router) {
+			r.Get("/", watchlistHandler.ListWatchlists)
+			r.Post("/", watchlistHandler.CreateWatchlist)
+			r.Get("/{id}", watchlistHandler.GetWatchlist)
+			r.Put("/{id}", watchlistHandler.UpdateWatchlist)
+			r.Delete("/{id}", watchlistHandler.DeleteWatchlist)
+			r.Get("/{id}/symbols", watchlistHandler.GetSymbols)
+			r.Post("/{id}/symbols", watchlistHandler.AddSymbol)
+			r.Delete("/{id}/symbols/{symbol}", watchlistHandler.RemoveSymbol)
+			r.Get("/symbol/{symbol}", watchlistHandler.GetWatchlistsBySymbol)
 		})
 	})
 
