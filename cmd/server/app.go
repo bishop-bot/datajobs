@@ -26,7 +26,9 @@ import (
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/metrics"
 	"github.com/bishop-bot/datajobs/internal/providers/earnings"
+	"github.com/bishop-bot/datajobs/internal/providers/fmp"
 	"github.com/bishop-bot/datajobs/internal/providers/ib"
+	"github.com/bishop-bot/datajobs/internal/repository"
 	"github.com/bishop-bot/datajobs/internal/scheduler"
 	"github.com/bishop-bot/datajobs/internal/tracing"
 	"github.com/bishop-bot/datajobs/internal/worker"
@@ -45,6 +47,11 @@ type App struct {
 	ibClient          *ib.Client
 	earningsClient    *earnings.Client
 	earningsProvider  earnings.Provider  // May be wrapped with rate limiter
+	fmpClient         *fmp.Client
+	fmpProvider       fmp.Provider
+
+	// Repositories
+	watchlistRepo *repository.WatchlistRepository
 
 	// Worker & scheduling
 	pool      *worker.Pool
@@ -96,6 +103,12 @@ func NewApp(cfg *config.Config, m *metrics.Metrics) (*App, error) {
 		logger.Warn("failed to init Earnings client", "error", err)
 		// Earnings client is nil - handlers requiring it will not be registered
 		// but startup can continue
+	}
+
+	// Initialize FMP client (optional - don't fail startup)
+	if err := app.initFMP(); err != nil {
+		logger.Warn("failed to init FMP client", "error", err)
+		// FMP client is nil - fundamentals_sync handler will not be registered
 	}
 
 	app.initWorkerPool()
@@ -176,6 +189,9 @@ func (a *App) Stop() {
 	}
 	if a.earningsClient != nil {
 		a.earningsClient.Close()
+	}
+	if a.fmpClient != nil {
+		a.fmpClient.Close()
 	}
 
 	// Shutdown HTTP server
@@ -261,6 +277,9 @@ func (a *App) initDatabases() error {
 		a.ilpClient = ingestion.NewILPClient(a.cfg.QuestDB, a.metrics)
 	}
 
+	// Initialize repositories
+	a.watchlistRepo = repository.NewWatchlistRepository(a.sqliteDB)
+
 	return nil
 }
 
@@ -307,6 +326,45 @@ func (a *App) EarningsClient() *earnings.Client {
 	return a.earningsClient
 }
 
+// initFMP initializes the FMP client.
+func (a *App) initFMP() error {
+	fmpClient, err := fmp.NewClient(
+		fmp.WithBaseURL(a.cfg.FMP.BaseURL),
+		fmp.WithTimeout(a.cfg.FMP.Timeout),
+	)
+	if err != nil {
+		a.logger.Warn("failed to init FMP client", "error", err)
+		// FMP is optional - don't fail startup
+		a.fmpClient = nil
+		a.fmpProvider = nil
+		return nil
+	}
+	a.fmpClient = fmpClient
+
+	// Wrap with rate limiter if configured
+	if a.cfg.FMP.RateLimitPerMin > 0 {
+		a.fmpProvider = newFMPRateLimitedProvider(fmpClient, a.cfg.FMP.RateLimitPerMin)
+		logging.Info("FMP provider configured with rate limiting",
+			"rateLimitPerMin", a.cfg.FMP.RateLimitPerMin)
+	} else {
+		a.fmpProvider = fmpClient
+	}
+
+	return nil
+}
+
+// newFMPRateLimitedProvider wraps FMP client with rate limiting.
+func newFMPRateLimitedProvider(client *fmp.Client, rateLimitPerMin int) fmp.Provider {
+	// For now, just return the client directly
+	// TODO: Implement rate limiting similar to earnings provider
+	return client
+}
+
+// FMPClient returns the FMP client.
+func (a *App) FMPClient() *fmp.Client {
+	return a.fmpClient
+}
+
 // initWorkerPool initializes the worker pool and registers handlers.
 func (a *App) initWorkerPool() {
 	a.pool = worker.NewPool(a.cfg.Worker, a.metrics)
@@ -329,6 +387,9 @@ func (a *App) initWorkerPool() {
 
 	// Register QuestDB handlers with all dependencies
 	jobs.RegisterQuestDBHandlers(a.pool, a.questDB, a.sqliteDB, a.ilpClient, a.ibClient, a.earningsProvider)
+
+	// Register fundamentals handlers with all dependencies
+	jobs.RegisterFundamentalsHandlers(a.pool, a.sqliteDB, a.questDB, a.fmpProvider, a.watchlistRepo)
 }
 
 // initScheduler initializes the scheduler and registers jobs from config.

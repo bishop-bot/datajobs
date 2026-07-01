@@ -11,10 +11,13 @@ import (
 	"github.com/bishop-bot/datajobs/internal/jobs/monitoring"
 	jobquestdb "github.com/bishop-bot/datajobs/internal/jobs/questdb"
 	corporateactions "github.com/bishop-bot/datajobs/internal/jobs/stocks"
+	fundamentals "github.com/bishop-bot/datajobs/internal/jobs/stocks/fundamentals"
 	"github.com/bishop-bot/datajobs/internal/jobs/system"
 	"github.com/bishop-bot/datajobs/internal/logging"
 	"github.com/bishop-bot/datajobs/internal/providers/earnings"
+	"github.com/bishop-bot/datajobs/internal/providers/fmp"
 	"github.com/bishop-bot/datajobs/internal/providers/ib"
+	"github.com/bishop-bot/datajobs/internal/repository"
 	"github.com/bishop-bot/datajobs/internal/worker"
 )
 
@@ -114,6 +117,21 @@ func RegisterQuestDBHandlers(pool *worker.Pool, questDB *database.QuestDB, sqlit
 			"sqliteDB_nil", sqliteDB == nil,
 			"earningsProvider_nil", earningsProvider == nil,
 			"hint", "ensure SQLite and Earnings provider are properly configured",
+		)
+	}
+}
+
+// RegisterFundamentalsHandlers registers the fundamentals sync handlers.
+func RegisterFundamentalsHandlers(pool *worker.Pool, sqliteDB *database.DB, questDB *database.QuestDB, fmpProvider fmp.Provider, watchlistRepo *repository.WatchlistRepository) {
+	// Register fundamentals sync handler
+	if sqliteDB != nil && fmpProvider != nil && watchlistRepo != nil {
+		pool.RegisterHandler("fundamentals_sync", fundamentals.HandlerWithDeps(sqliteDB, questDB, fmpProvider, watchlistRepo))
+	} else {
+		logging.Warn("fundamentals_sync handler not registered",
+			"sqliteDB_nil", sqliteDB == nil,
+			"fmpProvider_nil", fmpProvider == nil,
+			"watchlistRepo_nil", watchlistRepo == nil,
+			"hint", "ensure SQLite, FMP provider, and Watchlist repository are properly configured",
 		)
 	}
 }

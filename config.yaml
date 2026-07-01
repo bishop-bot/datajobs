@@ -172,6 +172,24 @@ jobs:
     metadata:
       description: "Syncs economic calendar events from Earnings API to SQLite"
 
+  - id: "fundamentals-sync"
+    name: "Stock Fundamentals Weekly Sync"
+    cron: "0 6 * * 6"  # Weekly on Saturday at 06:00 HKT
+    type: "fundamentals"
+    handler: "fundamentals_sync"
+    enabled: true
+    audit: true  # Enable audit logging for this job
+    timeout: 3600
+    retry:
+      maxAttempts: 3
+      initialDelay: 1000
+      maxDelay: 60000
+      multiplier: 2.0
+    metadata:
+      description: "Syncs stock fundamental metrics from FMP API to SQLite"
+      watchlistId: "fmpfree"  # Watchlist containing symbols to sync
+      provider: "FMP"  # Data provider (FMP)
+
 metrics:
   enabled: true
   path: "/metrics"
