@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	// DefaultBaseURL is the default base URL for the FMP API.
-	DefaultBaseURL = "https://financialmodelingprep.com/api"
+	// DefaultBaseURL is the default base URL for the FMP API (stable version).
+	DefaultBaseURL = "https://financialmodelingprep.com/stable"
 
 	// DefaultTimeout is the default request timeout.
 	DefaultTimeout = 30 * time.Second
@@ -115,14 +115,15 @@ func (c *Client) Ping(ctx context.Context) error {
 	}
 
 	// Make a lightweight request to check connectivity
-	// Using the company list endpoint which is simple and fast
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.buildURL("/v3/stock-screener"), nil)
+	// Using the ratios endpoint which is simple and fast
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.buildURL("/ratios"), nil)
 	if err != nil {
 		return err
 	}
 
 	req.URL.RawQuery = url.Values{
 		"apikey": {c.apiKey},
+		"symbol": {"AAPL"},
 		"limit":  {"1"},
 	}.Encode()
 
@@ -163,11 +164,10 @@ func (c *Client) FinancialRatios(ctx context.Context, symbol string, period stri
 		"baseURL", c.baseURL,
 	)
 
-	endpoint := "/v3/ratios/" + symbol
-	if period == PeriodQuarter {
-		endpoint = "/v3/ratios/" + symbol + "?period=quarter"
-	} else if period == PeriodTTM {
-		endpoint = "/v3/ratios-ttm/" + symbol
+	// Build endpoint based on period
+	endpoint := "/ratios/" + symbol
+	if period == PeriodTTM {
+		endpoint = "/ratios/ttm/" + symbol
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.buildURL(endpoint), nil)
@@ -249,11 +249,10 @@ func (c *Client) KeyMetrics(ctx context.Context, symbol string, period string) (
 		"baseURL", c.baseURL,
 	)
 
-	endpoint := "/v3/key-metrics/" + symbol
-	if period == PeriodQuarter {
-		endpoint = "/v3/key-metrics/" + symbol + "?period=quarter"
-	} else if period == PeriodTTM {
-		endpoint = "/v3/key-metrics-ttm/" + symbol
+	// Build endpoint based on period
+	endpoint := "/key-metrics/" + symbol
+	if period == PeriodTTM {
+		endpoint = "/key-metrics/ttm/" + symbol
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.buildURL(endpoint), nil)
