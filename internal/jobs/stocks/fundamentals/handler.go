@@ -228,6 +228,14 @@ func buildStockMetrics(symbol, provider string, year int, ratios *fmp.FinancialR
 		if metrics.EnterpriseValue != nil {
 			m.EnterpriseValue = metrics.EnterpriseValue
 		}
+		// EV to revenue
+		if metrics.EVToRevenue != nil {
+			m.EVToRevenue = metrics.EVToRevenue
+		}
+		// EV to EBITDA
+		if metrics.EVToEBITDA != nil {
+			m.EVToEBITDA = metrics.EVToEBITDA
+		}
 		// Free cash flow
 		if metrics.FreeCashFlow != nil {
 			m.FreeCashFlow = metrics.FreeCashFlow
@@ -256,6 +264,9 @@ func buildStockMetrics(symbol, provider string, year int, ratios *fmp.FinancialR
 		}
 		if metrics.ReturnOnEquity != nil {
 			m.ReturnOnEquity = metrics.ReturnOnEquity
+		}
+		if metrics.ReturnOnCapitalEmployed != nil {
+			m.ReturnOnCapitalEmployed = metrics.ReturnOnCapitalEmployed
 		}
 		if metrics.ROIC != nil {
 			m.ROIC = metrics.ROIC

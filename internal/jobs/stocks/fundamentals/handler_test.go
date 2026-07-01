@@ -70,11 +70,14 @@ var sampleFinancialRatiosTTMResponse = &fmp.FinancialRatiosResponse{
 
 // Sample KeyMetricsTTMResponse is a sample response from FMP API.
 var sampleKeyMetricsTTMResponse = &fmp.KeyMetricsResponse{
-	Symbol:          "AAPL",
-	Date:            "2024-03-31",
-	Period:          "ttm",
-	EnterpriseValue: floatPtr(4298316332160),
-	FreeCashFlow:   floatPtr(129174000000),
+	Symbol:                  "AAPL",
+	Date:                    "2024-03-31",
+	Period:                  "ttm",
+	EnterpriseValue:         floatPtr(4298316332160),
+	FreeCashFlow:            floatPtr(129174000000),
+	ReturnOnCapitalEmployed: floatPtr(0.4523),
+	EVToRevenue:             floatPtr(9.5),
+	EVToEBITDA:              floatPtr(28.7),
 }
 
 func TestHandlerImpl_Success(t *testing.T) {
@@ -329,6 +332,19 @@ func TestBuildStockMetrics(t *testing.T) {
 
 	if metrics.FreeCashFlow == nil || *metrics.FreeCashFlow != 129174000000 {
 		t.Errorf("expected FCF 129174000000, got %v", metrics.FreeCashFlow)
+	}
+
+	// Verify new KeyMetrics mappings (from FinancialRatios)
+	if metrics.ReturnOnCapitalEmployed == nil || *metrics.ReturnOnCapitalEmployed != 0.4523 {
+		t.Errorf("expected ROCE 0.4523, got %v", metrics.ReturnOnCapitalEmployed)
+	}
+
+	if metrics.EVToRevenue == nil || *metrics.EVToRevenue != 9.5 {
+		t.Errorf("expected EV/Revenue 9.5, got %v", metrics.EVToRevenue)
+	}
+
+	if metrics.EVToEBITDA == nil || *metrics.EVToEBITDA != 28.7 {
+		t.Errorf("expected EV/EBITDA 28.7, got %v", metrics.EVToEBITDA)
 	}
 }
 

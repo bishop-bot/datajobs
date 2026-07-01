@@ -66,13 +66,16 @@ type KeyMetricsResponse struct {
 	PriceToSalesRatio    *float64 `json:"priceToSalesRatioTTM"`
 	PriceToFreeCashFlows *float64 `json:"priceToFreeCashFlowRatioTTM"`
 	EnterpriseValue      *float64 `json:"enterpriseValueTTM"`
+	EVToRevenue          *float64 `json:"evToSalesTTM"`
+	EVToEBITDA           *float64 `json:"evToEBITDATTM"`
 	// Profitability Metrics
-	NetProfitMargin       *float64 `json:"netProfitMarginTTM"`
-	GrossProfitMargin     *float64 `json:"grossProfitMarginTTM"`
-	OperatingProfitMargin *float64 `json:"operatingProfitMarginTTM"`
-	ReturnOnEquity        *float64 `json:"returnOnEquityTTM"`
-	ReturnOnAssets        *float64 `json:"returnOnAssetsTTM"`
-	ROIC                  *float64 `json:"returnOnInvestedCapitalTTM"`
+	NetProfitMargin        *float64 `json:"netProfitMarginTTM"`
+	GrossProfitMargin      *float64 `json:"grossProfitMarginTTM"`
+	OperatingProfitMargin  *float64 `json:"operatingProfitMarginTTM"`
+	ReturnOnEquity         *float64 `json:"returnOnEquityTTM"`
+	ReturnOnAssets         *float64 `json:"returnOnAssetsTTM"`
+	ReturnOnCapitalEmployed *float64 `json:"returnOnCapitalEmployedTTM"`
+	ROIC                   *float64 `json:"returnOnInvestedCapitalTTM"`
 	// Financial Health
 	DebtToEquity *float64 `json:"debtToEquityRatioTTM"`
 	DebtToAssets *float64 `json:"debtToAssetsRatioTTM"`
