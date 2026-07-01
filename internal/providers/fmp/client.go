@@ -175,7 +175,7 @@ func (c *Client) FinancialRatios(ctx context.Context, symbol string, period stri
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("apikey", c.apiKey)
+	req.URL.RawQuery = url.Values{"apikey": {c.apiKey}}.Encode()
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -260,7 +260,7 @@ func (c *Client) KeyMetrics(ctx context.Context, symbol string, period string) (
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("apikey", c.apiKey)
+	req.URL.RawQuery = url.Values{"apikey": {c.apiKey}}.Encode()
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
