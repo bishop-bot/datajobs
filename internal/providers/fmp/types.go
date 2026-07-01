@@ -4,53 +4,53 @@ package fmp
 type FinancialRatiosResponse struct {
 	Symbol string `json:"symbol"`
 	Date   string `json:"date"`
-	// Profitability Ratios
-	GrossProfitMargin       *float64 `json:"grossProfitMargin"`
-	OperatingProfitMargin   *float64 `json:"operatingProfitMargin"`
-	NetProfitMargin         *float64 `json:"netProfitMargin"`
-	ReturnOnAssets          *float64 `json:"returnOnAssets"`
-	ReturnOnEquity          *float64 `json:"returnOnEquity"`
-	ReturnOnCapitalEmployed *float64 `json:"returnOnCapitalEmployed"`
-	ROIC                    *float64 `json:"ROIC"`
+	// Profitability Ratios (TTM suffix for TTM endpoint)
+	GrossProfitMargin        *float64 `json:"grossProfitMarginTTM"`
+	OperatingProfitMargin    *float64 `json:"operatingProfitMarginTTM"`
+	NetProfitMargin          *float64 `json:"netProfitMarginTTM"`
+	ReturnOnAssets           *float64 `json:"returnOnAssetsTTM"`
+	ReturnOnEquity           *float64 `json:"returnOnEquityTTM"`
+	ReturnOnCapitalEmployed  *float64 `json:"returnOnCapitalEmployedTTM"`
+	ROIC                     *float64 `json:"returnOnInvestedCapitalTTM"`
 	// Liquidity Ratios
-	CurrentRatio   *float64 `json:"currentRatio"`
-	QuickRatio     *float64 `json:"quickRatio"`
-	CashRatio      *float64 `json:"cashRatio"`
-	WorkingCapital *float64 `json:"workingCapital"`
+	CurrentRatio   *float64 `json:"currentRatioTTM"`
+	QuickRatio     *float64 `json:"quickRatioTTM"`
+	CashRatio      *float64 `json:"cashRatioTTM"`
+	WorkingCapital *float64 `json:"workingCapitalTTM"`
 	// Efficiency Ratios
-	AssetTurnover            *float64 `json:"assetTurnover"`
-	InventoryTurnoverRatio   *float64 `json:"inventoryTurnoverRatio"`
-	ReceivablesTurnover      *float64 `json:"receivablesTurnover"`
-	PayablesTurnover         *float64 `json:"payablesTurnover"`
-	DaysSalesOutstanding     *float64 `json:"daysSalesOutstanding"`
-	DaysInventoryOutstanding *float64 `json:"daysInventoryOutstanding"`
-	OperatingCycle           *float64 `json:"operatingCycle"`
-	DaysPayablesOutstanding  *float64 `json:"daysPayablesOutstanding"`
-	CashConversionCycle      *float64 `json:"cashConversionCycle"`
+	AssetTurnover            *float64 `json:"assetTurnoverTTM"`
+	InventoryTurnoverRatio   *float64 `json:"inventoryTurnoverTTM"`
+	ReceivablesTurnover      *float64 `json:"receivablesTurnoverTTM"`
+	PayablesTurnover         *float64 `json:"payablesTurnoverTTM"`
+	DaysSalesOutstanding     *float64 `json:"daysOfSalesOutstandingTTM"`
+	DaysInventoryOutstanding *float64 `json:"daysOfInventoryOutstandingTTM"`
+	OperatingCycle           *float64 `json:"operatingCycleTTM"`
+	DaysPayablesOutstanding  *float64 `json:"daysOfPayablesOutstandingTTM"`
+	CashConversionCycle      *float64 `json:"cashConversionCycleTTM"`
 	// Leverage Ratios
-	DebtRatio         *float64 `json:"debtRatio"`
-	DebtToEquity      *float64 `json:"debtToEquity"`
-	DebtToAssets      *float64 `json:"debtToAssets"`
-	FinancialLeverage *float64 `json:"financialLeverage"`
-	InterestCoverage  *float64 `json:"interestCoverage"`
-	CashFlowToDebt    *float64 `json:"cashFlowToDebt"`
+	DebtRatio         *float64 `json:"debtToAssetsRatioTTM"`
+	DebtToEquity      *float64 `json:"debtToEquityRatioTTM"`
+	DebtToAssets      *float64 `json:"debtToAssetsRatioTTM"`
+	FinancialLeverage *float64 `json:"financialLeverageRatioTTM"`
+	InterestCoverage  *float64 `json:"interestCoverageRatioTTM"`
+	CashFlowToDebt    *float64 `json:"debtServiceCoverageRatioTTM"`
 	// Valuation Ratios
-	PriceEarningsRatio   *float64 `json:"priceEarningsRatio"`
-	PriceToBookRatio     *float64 `json:"priceToBookRatio"`
-	PriceToSalesRatio    *float64 `json:"priceToSalesRatio"`
-	PriceToFreeCashFlows *float64 `json:"priceToFreeCashFlows"`
-	PriceToOperatingCF   *float64 `json:"priceToOperatingCF"`
-	EVToRevenue          *float64 `json:"EVToRevenue"`
-	EVToEBITDA           *float64 `json:"EVToEBITDA"`
+	PriceEarningsRatio   *float64 `json:"priceToEarningsRatioTTM"`
+	PriceToBookRatio     *float64 `json:"priceToBookRatioTTM"`
+	PriceToSalesRatio    *float64 `json:"priceToSalesRatioTTM"`
+	PriceToFreeCashFlows *float64 `json:"priceToFreeCashFlowRatioTTM"`
+	PriceToOperatingCF   *float64 `json:"priceToOperatingCashFlowRatioTTM"`
+	EVToRevenue          *float64 `json:"evToSalesTTM"`
+	EVToEBITDA           *float64 `json:"evToEBITDATTM"`
 	// Cash Flow Ratios
-	CashPerShare              *float64 `json:"cashPerShare"`
-	OperatingCashFlowPerShare *float64 `json:"operatingCashFlowPerShare"`
-	FreeCashFlowPerShare      *float64 `json:"freeCashFlowPerShare"`
-	CashFlowCoverageOfDebt    *float64 `json:"cashFlowCoverageOfDebt"`
-	CashFlowToDebtRatio       *float64 `json:"cashFlowToDebtRatio"`
+	CashPerShare              *float64 `json:"cashPerShareTTM"`
+	OperatingCashFlowPerShare *float64 `json:"operatingCashFlowPerShareTTM"`
+	FreeCashFlowPerShare      *float64 `json:"freeCashFlowPerShareTTM"`
+	CashFlowCoverageOfDebt    *float64 `json:"cashFlowCoverageRatioTTM"`
+	CashFlowToDebtRatio       *float64 `json:"operatingCashFlowCoverageRatioTTM"`
 	// Dividend Metrics
-	DividendYield *float64 `json:"dividendYield"`
-	PayoutRatio   *float64 `json:"payoutRatio"`
+	DividendYield *float64 `json:"dividendYieldTTM"`
+	PayoutRatio   *float64 `json:"dividendPayoutRatioTTM"`
 }
 
 // KeyMetricsResponse represents the API response for the key metrics endpoint.
@@ -60,42 +60,42 @@ type KeyMetricsResponse struct {
 	Period string `json:"period"`
 	// Valuation Metrics
 	MarketCap            *float64 `json:"marketCap"`
-	PERatio              *float64 `json:"peRatio"`
+	PERatio              *float64 `json:"priceToEarningsRatioTTM"`
 	PEGRatio             *float64 `json:"pegRatio"`
-	PriceToBookRatio     *float64 `json:"priceToBookRatio"`
-	PriceToSalesRatio    *float64 `json:"priceToSalesRatio"`
-	PriceToFreeCashFlows *float64 `json:"priceToFreeCashFlows"`
-	EnterpriseValue      *float64 `json:"enterpriseValue"`
+	PriceToBookRatio     *float64 `json:"priceToBookRatioTTM"`
+	PriceToSalesRatio    *float64 `json:"priceToSalesRatioTTM"`
+	PriceToFreeCashFlows *float64 `json:"priceToFreeCashFlowRatioTTM"`
+	EnterpriseValue      *float64 `json:"enterpriseValueTTM"`
 	// Profitability Metrics
-	NetProfitMargin       *float64 `json:"netProfitMargin"`
-	GrossProfitMargin     *float64 `json:"grossProfitMargin"`
-	OperatingProfitMargin *float64 `json:"operatingProfitMargin"`
-	ReturnOnEquity        *float64 `json:"returnOnEquity"`
-	ReturnOnAssets        *float64 `json:"returnOnAssets"`
-	ROIC                  *float64 `json:"roic"`
+	NetProfitMargin       *float64 `json:"netProfitMarginTTM"`
+	GrossProfitMargin     *float64 `json:"grossProfitMarginTTM"`
+	OperatingProfitMargin *float64 `json:"operatingProfitMarginTTM"`
+	ReturnOnEquity        *float64 `json:"returnOnEquityTTM"`
+	ReturnOnAssets        *float64 `json:"returnOnAssetsTTM"`
+	ROIC                  *float64 `json:"returnOnInvestedCapitalTTM"`
 	// Financial Health
-	DebtToEquity *float64 `json:"debtToEquity"`
-	DebtToAssets *float64 `json:"debtToAssets"`
-	CurrentRatio *float64 `json:"currentRatio"`
-	QuickRatio   *float64 `json:"quickRatio"`
+	DebtToEquity *float64 `json:"debtToEquityRatioTTM"`
+	DebtToAssets *float64 `json:"debtToAssetsRatioTTM"`
+	CurrentRatio *float64 `json:"currentRatioTTM"`
+	QuickRatio   *float64 `json:"quickRatioTTM"`
 	// Per Share Metrics
-	RevenuePerShare       *float64 `json:"revenuePerShare"`
-	NetIncomePerShare     *float64 `json:"netIncomePerShare"`
-	OperatingCFPerShare   *float64 `json:"operatingCashFlowPerShare"`
-	FreeCFPerShare        *float64 `json:"freeCashFlowPerShare"`
-	BookValuePerShare     *float64 `json:"bookValuePerShare"`
-	TangibleAssetPerShare *float64 `json:"tangibleAssetPerShare"`
+	RevenuePerShare       *float64 `json:"revenuePerShareTTM"`
+	NetIncomePerShare     *float64 `json:"netIncomePerShareTTM"`
+	OperatingCFPerShare   *float64 `json:"operatingCashFlowPerShareTTM"`
+	FreeCFPerShare        *float64 `json:"freeCashFlowPerShareTTM"`
+	BookValuePerShare     *float64 `json:"bookValuePerShareTTM"`
+	TangibleAssetPerShare *float64 `json:"tangibleBookValuePerShareTTM"`
 	// Growth Metrics
-	RevenueGrowth   *float64 `json:"revenueGrowth"`
-	NetIncomeGrowth *float64 `json:"netIncomeGrowth"`
-	EPSGrowth       *float64 `json:"epsgrowth"`
+	RevenueGrowth   *float64 `json:"revenueGrowthTTM"`
+	NetIncomeGrowth *float64 `json:"netIncomeGrowthTTM"`
+	EPSGrowth       *float64 `json:"earningsYieldTTM"`
 	// Other Metrics
-	FreeCashFlow      *float64 `json:"freeCashFlow"`
-	OperatingCashFlow *float64 `json:"operatingCashFlow"`
-	EBITDA            *float64 `json:"ebitda"`
-	Revenue           *float64 `json:"revenue"`
-	NetIncome         *float64 `json:"netIncome"`
-	GrossProfit       *float64 `json:"grossProfit"`
+	FreeCashFlow      *float64 `json:"freeCashFlowToFirmTTM"`
+	OperatingCashFlow *float64 `json:"operatingCashFlowTTM"`
+	EBITDA            *float64 `json:"ebitdaMarginTTM"`
+	Revenue           *float64 `json:"revenueTTM"`
+	NetIncome         *float64 `json:"netIncomeTTM"`
+	GrossProfit       *float64 `json:"grossProfitTTM"`
 }
 
 // Period constants for API requests.

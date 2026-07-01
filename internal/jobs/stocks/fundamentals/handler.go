@@ -182,14 +182,7 @@ func buildStockMetrics(symbol, provider string, year int, ratios *fmp.FinancialR
 		Year:      year,
 	}
 
-	// Set date from ratios or metrics
-	if ratios != nil && ratios.Date != "" {
-		m.Date = ratios.Date
-	} else if metrics != nil && metrics.Date != "" {
-		m.Date = metrics.Date
-	}
-
-	// Map FinancialRatios fields
+	// Map FinancialRatios fields (from TTM endpoint)
 	if ratios != nil {
 		// Cash ratio maps to 'cash' column
 		m.Cash = ratios.CashRatio
@@ -231,7 +224,6 @@ func buildStockMetrics(symbol, provider string, year int, ratios *fmp.FinancialR
 
 	// Map KeyMetrics fields (these can override or supplement ratios)
 	if metrics != nil {
-		// CIK is not in KeyMetricsResponse, would need a separate API call
 		// Enterprise value
 		if metrics.EnterpriseValue != nil {
 			m.EnterpriseValue = metrics.EnterpriseValue
@@ -276,10 +268,6 @@ func buildStockMetrics(symbol, provider string, year int, ratios *fmp.FinancialR
 		}
 		if metrics.OperatingProfitMargin != nil {
 			m.OperatingProfitMargin = metrics.OperatingProfitMargin
-		}
-		// If date not set from ratios, use metrics date
-		if m.Date == "" && metrics.Date != "" {
-			m.Date = metrics.Date
 		}
 	}
 
