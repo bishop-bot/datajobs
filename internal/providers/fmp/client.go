@@ -164,10 +164,12 @@ func (c *Client) FinancialRatios(ctx context.Context, symbol string, period stri
 		"baseURL", c.baseURL,
 	)
 
-	// Build endpoint based on period
+	// Build endpoint and query params based on period
 	endpoint := "/ratios/" + symbol
+	queryParams := url.Values{"apikey": {c.apiKey}}
 	if period == PeriodTTM {
-		endpoint = "/ratios/ttm/" + symbol
+		endpoint = "/ratios-ttm"
+		queryParams.Set("symbol", symbol)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.buildURL(endpoint), nil)
@@ -175,7 +177,7 @@ func (c *Client) FinancialRatios(ctx context.Context, symbol string, period stri
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.URL.RawQuery = url.Values{"apikey": {c.apiKey}}.Encode()
+	req.URL.RawQuery = queryParams.Encode()
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -249,10 +251,12 @@ func (c *Client) KeyMetrics(ctx context.Context, symbol string, period string) (
 		"baseURL", c.baseURL,
 	)
 
-	// Build endpoint based on period
+	// Build endpoint and query params based on period
 	endpoint := "/key-metrics/" + symbol
+	queryParams := url.Values{"apikey": {c.apiKey}}
 	if period == PeriodTTM {
-		endpoint = "/key-metrics/ttm/" + symbol
+		endpoint = "/key-metrics-ttm"
+		queryParams.Set("symbol", symbol)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.buildURL(endpoint), nil)
@@ -260,7 +264,7 @@ func (c *Client) KeyMetrics(ctx context.Context, symbol string, period string) (
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.URL.RawQuery = url.Values{"apikey": {c.apiKey}}.Encode()
+	req.URL.RawQuery = queryParams.Encode()
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
