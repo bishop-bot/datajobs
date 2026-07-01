@@ -40,7 +40,7 @@ earnings:
 
 # Financial Modeling Prep API
 fmp:
-  baseURL: "https://financialmodelingprep.com/api"
+  baseURL: "https://financialmodelingprep.com/stable"
   timeout: 30s
   rateLimitPerMin: 30  # Requests per minute (default: 30)
 

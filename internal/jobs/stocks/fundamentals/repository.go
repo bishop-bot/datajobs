@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/bishop-bot/datajobs/internal/database"
 	"github.com/bishop-bot/datajobs/internal/logging"
@@ -59,7 +60,7 @@ func (r *Repository) UpsertBatch(ctx context.Context, metrics []*StockMetricsTTM
 	}
 	defer tx.Rollback()
 
-	query := `
+	insertQuery := `
 		INSERT INTO stock_metrics_ttm (
 			symbol, cik, date, year, provider,
 			cash, current, currency,
@@ -67,15 +68,20 @@ func (r *Repository) UpsertBatch(ctx context.Context, metrics []*StockMetricsTTM
 			enterprise_value, free_cash_flow, price,
 			price_to_book, price_to_cash_flow, price_to_earnings,
 			price_to_free_cash_flow, price_to_sales,
-			quick, return_on_assets, return_on_equity
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			quick, return_on_assets, return_on_equity,
+			gross_profit_margin, operating_profit_margin, net_profit_margin,
+			return_on_capital_employed, roic, ev_to_revenue, ev_to_ebitda,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	stmt, err := tx.PrepareContext(ctx, query)
+	insertStmt, err := tx.PrepareContext(ctx, insertQuery)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to prepare statement: %w", err)
+		return 0, 0, fmt.Errorf("failed to prepare insert statement: %w", err)
 	}
-	defer stmt.Close()
+	defer insertStmt.Close()
+
+	now := time.Now().UTC().Format(time.RFC3339)
 
 	inserted := 0
 	updated := 0
@@ -89,7 +95,7 @@ func (r *Repository) UpsertBatch(ctx context.Context, metrics []*StockMetricsTTM
 
 		if err == sql.ErrNoRows {
 			// No existing record - insert
-			_, err = stmt.ExecContext(ctx,
+			_, err = insertStmt.ExecContext(ctx,
 				m.Symbol, m.CIK, m.Date, m.Year, m.Provider,
 				m.Cash, m.Current, m.Currency,
 				m.DebtToEquity, m.DividendPayout, m.DividendYield,
@@ -97,6 +103,9 @@ func (r *Repository) UpsertBatch(ctx context.Context, metrics []*StockMetricsTTM
 				m.PriceToBook, m.PriceToCashFlow, m.PriceToEarnings,
 				m.PriceToFreeCashFlow, m.PriceToSales,
 				m.Quick, m.ReturnOnAssets, m.ReturnOnEquity,
+				m.GrossProfitMargin, m.OperatingProfitMargin, m.NetProfitMargin,
+				m.ReturnOnCapitalEmployed, m.ROIC, m.EVToRevenue, m.EVToEBITDA,
+				now, now,
 			)
 			if err != nil {
 				logging.Error("failed to insert stock metrics",
@@ -122,7 +131,10 @@ func (r *Repository) UpsertBatch(ctx context.Context, metrics []*StockMetricsTTM
 					enterprise_value = ?, free_cash_flow = ?, price = ?,
 					price_to_book = ?, price_to_cash_flow = ?, price_to_earnings = ?,
 					price_to_free_cash_flow = ?, price_to_sales = ?,
-					quick = ?, return_on_assets = ?, return_on_equity = ?
+					quick = ?, return_on_assets = ?, return_on_equity = ?,
+					gross_profit_margin = ?, operating_profit_margin = ?, net_profit_margin = ?,
+					return_on_capital_employed = ?, roic = ?, ev_to_revenue = ?, ev_to_ebitda = ?,
+					updated_at = ?
 				WHERE symbol = ?
 			`,
 				m.CIK, m.Date, m.Year,
@@ -132,6 +144,9 @@ func (r *Repository) UpsertBatch(ctx context.Context, metrics []*StockMetricsTTM
 				m.PriceToBook, m.PriceToCashFlow, m.PriceToEarnings,
 				m.PriceToFreeCashFlow, m.PriceToSales,
 				m.Quick, m.ReturnOnAssets, m.ReturnOnEquity,
+				m.GrossProfitMargin, m.OperatingProfitMargin, m.NetProfitMargin,
+				m.ReturnOnCapitalEmployed, m.ROIC, m.EVToRevenue, m.EVToEBITDA,
+				now,
 				m.Symbol,
 			)
 			if err != nil {
@@ -144,7 +159,7 @@ func (r *Repository) UpsertBatch(ctx context.Context, metrics []*StockMetricsTTM
 			updated++
 		} else {
 			// Different provider - insert (allows multiple providers per symbol)
-			_, err = stmt.ExecContext(ctx,
+			_, err = insertStmt.ExecContext(ctx,
 				m.Symbol, m.CIK, m.Date, m.Year, m.Provider,
 				m.Cash, m.Current, m.Currency,
 				m.DebtToEquity, m.DividendPayout, m.DividendYield,
@@ -152,6 +167,9 @@ func (r *Repository) UpsertBatch(ctx context.Context, metrics []*StockMetricsTTM
 				m.PriceToBook, m.PriceToCashFlow, m.PriceToEarnings,
 				m.PriceToFreeCashFlow, m.PriceToSales,
 				m.Quick, m.ReturnOnAssets, m.ReturnOnEquity,
+				m.GrossProfitMargin, m.OperatingProfitMargin, m.NetProfitMargin,
+				m.ReturnOnCapitalEmployed, m.ROIC, m.EVToRevenue, m.EVToEBITDA,
+				now, now,
 			)
 			if err != nil {
 				logging.Error("failed to insert stock metrics (provider conflict)",
@@ -175,6 +193,7 @@ func (r *Repository) UpsertBatch(ctx context.Context, metrics []*StockMetricsTTM
 
 // insert performs an INSERT for new stock metrics.
 func (r *Repository) insert(ctx context.Context, m *StockMetricsTTM) error {
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := r.db.Exec(ctx, `
 		INSERT INTO stock_metrics_ttm (
 			symbol, cik, date, year, provider,
@@ -183,8 +202,11 @@ func (r *Repository) insert(ctx context.Context, m *StockMetricsTTM) error {
 			enterprise_value, free_cash_flow, price,
 			price_to_book, price_to_cash_flow, price_to_earnings,
 			price_to_free_cash_flow, price_to_sales,
-			quick, return_on_assets, return_on_equity
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			quick, return_on_assets, return_on_equity,
+			gross_profit_margin, operating_profit_margin, net_profit_margin,
+			return_on_capital_employed, roic, ev_to_revenue, ev_to_ebitda,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		m.Symbol, m.CIK, m.Date, m.Year, m.Provider,
 		m.Cash, m.Current, m.Currency,
@@ -193,12 +215,16 @@ func (r *Repository) insert(ctx context.Context, m *StockMetricsTTM) error {
 		m.PriceToBook, m.PriceToCashFlow, m.PriceToEarnings,
 		m.PriceToFreeCashFlow, m.PriceToSales,
 		m.Quick, m.ReturnOnAssets, m.ReturnOnEquity,
+		m.GrossProfitMargin, m.OperatingProfitMargin, m.NetProfitMargin,
+		m.ReturnOnCapitalEmployed, m.ROIC, m.EVToRevenue, m.EVToEBITDA,
+		now, now,
 	)
 	return err
 }
 
 // update performs an UPDATE for existing stock metrics.
 func (r *Repository) update(ctx context.Context, m *StockMetricsTTM) error {
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := r.db.Exec(ctx, `
 		UPDATE stock_metrics_ttm SET
 			cik = ?, date = ?, year = ?,
@@ -207,7 +233,10 @@ func (r *Repository) update(ctx context.Context, m *StockMetricsTTM) error {
 			enterprise_value = ?, free_cash_flow = ?, price = ?,
 			price_to_book = ?, price_to_cash_flow = ?, price_to_earnings = ?,
 			price_to_free_cash_flow = ?, price_to_sales = ?,
-			quick = ?, return_on_assets = ?, return_on_equity = ?
+			quick = ?, return_on_assets = ?, return_on_equity = ?,
+			gross_profit_margin = ?, operating_profit_margin = ?, net_profit_margin = ?,
+			return_on_capital_employed = ?, roic = ?, ev_to_revenue = ?, ev_to_ebitda = ?,
+			updated_at = ?
 		WHERE symbol = ?
 	`,
 		m.CIK, m.Date, m.Year,
@@ -217,6 +246,9 @@ func (r *Repository) update(ctx context.Context, m *StockMetricsTTM) error {
 		m.PriceToBook, m.PriceToCashFlow, m.PriceToEarnings,
 		m.PriceToFreeCashFlow, m.PriceToSales,
 		m.Quick, m.ReturnOnAssets, m.ReturnOnEquity,
+		m.GrossProfitMargin, m.OperatingProfitMargin, m.NetProfitMargin,
+		m.ReturnOnCapitalEmployed, m.ROIC, m.EVToRevenue, m.EVToEBITDA,
+		now,
 		m.Symbol,
 	)
 	return err

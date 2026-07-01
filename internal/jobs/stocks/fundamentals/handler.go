@@ -191,42 +191,92 @@ func buildStockMetrics(symbol, provider string, year int, ratios *fmp.FinancialR
 
 	// Map FinancialRatios fields
 	if ratios != nil {
-		// cash ratio maps to 'cash' column
+		// Cash ratio maps to 'cash' column
 		m.Cash = ratios.CashRatio
-		// current ratio maps to 'current' column
+		// Current ratio maps to 'current' column
 		m.Current = ratios.CurrentRatio
-		// quick ratio maps to 'quick' column
+		// Quick ratio maps to 'quick' column
 		m.Quick = ratios.QuickRatio
-		// debt to equity
+		// Debt to equity
 		m.DebtToEquity = ratios.DebtToEquity
-		// payout ratio maps to 'dividend_payout'
+		// Payout ratio maps to 'dividend_payout'
 		m.DividendPayout = ratios.PayoutRatio
-		// dividend yield
+		// Dividend yield
 		m.DividendYield = ratios.DividendYield
-		// price to earnings
+		// Price to earnings
 		m.PriceToEarnings = ratios.PriceEarningsRatio
-		// price to book
+		// Price to book
 		m.PriceToBook = ratios.PriceToBookRatio
-		// price to sales
+		// Price to sales
 		m.PriceToSales = ratios.PriceToSalesRatio
-		// price to free cash flows
+		// Price to free cash flows
 		m.PriceToFreeCashFlow = ratios.PriceToFreeCashFlows
-		// price to operating cash flow
+		// Price to operating cash flow
 		m.PriceToCashFlow = ratios.PriceToOperatingCF
-		// return on assets
+		// Return on assets
 		m.ReturnOnAssets = ratios.ReturnOnAssets
-		// return on equity
+		// Return on equity
 		m.ReturnOnEquity = ratios.ReturnOnEquity
+		// Profitability margins
+		m.GrossProfitMargin = ratios.GrossProfitMargin
+		m.OperatingProfitMargin = ratios.OperatingProfitMargin
+		m.NetProfitMargin = ratios.NetProfitMargin
+		// Return on capital
+		m.ReturnOnCapitalEmployed = ratios.ReturnOnCapitalEmployed
+		m.ROIC = ratios.ROIC
+		// Valuation multiples
+		m.EVToRevenue = ratios.EVToRevenue
+		m.EVToEBITDA = ratios.EVToEBITDA
 	}
 
-	// Map KeyMetrics fields
+	// Map KeyMetrics fields (these can override or supplement ratios)
 	if metrics != nil {
-		// CIK
-		// Note: CIK is not in KeyMetricsResponse, would need a separate API call
+		// CIK is not in KeyMetricsResponse, would need a separate API call
 		// Enterprise value
-		m.EnterpriseValue = metrics.EnterpriseValue
+		if metrics.EnterpriseValue != nil {
+			m.EnterpriseValue = metrics.EnterpriseValue
+		}
 		// Free cash flow
-		m.FreeCashFlow = metrics.FreeCashFlow
+		if metrics.FreeCashFlow != nil {
+			m.FreeCashFlow = metrics.FreeCashFlow
+		}
+		// Override ratios with metrics if metrics has value (metrics is more recent TTM data)
+		if metrics.CurrentRatio != nil {
+			m.Current = metrics.CurrentRatio
+		}
+		if metrics.QuickRatio != nil {
+			m.Quick = metrics.QuickRatio
+		}
+		if metrics.DebtToEquity != nil {
+			m.DebtToEquity = metrics.DebtToEquity
+		}
+		if metrics.PriceToBookRatio != nil {
+			m.PriceToBook = metrics.PriceToBookRatio
+		}
+		if metrics.PriceToSalesRatio != nil {
+			m.PriceToSales = metrics.PriceToSalesRatio
+		}
+		if metrics.PriceToFreeCashFlows != nil {
+			m.PriceToFreeCashFlow = metrics.PriceToFreeCashFlows
+		}
+		if metrics.ReturnOnAssets != nil {
+			m.ReturnOnAssets = metrics.ReturnOnAssets
+		}
+		if metrics.ReturnOnEquity != nil {
+			m.ReturnOnEquity = metrics.ReturnOnEquity
+		}
+		if metrics.ROIC != nil {
+			m.ROIC = metrics.ROIC
+		}
+		if metrics.NetProfitMargin != nil {
+			m.NetProfitMargin = metrics.NetProfitMargin
+		}
+		if metrics.GrossProfitMargin != nil {
+			m.GrossProfitMargin = metrics.GrossProfitMargin
+		}
+		if metrics.OperatingProfitMargin != nil {
+			m.OperatingProfitMargin = metrics.OperatingProfitMargin
+		}
 		// If date not set from ratios, use metrics date
 		if m.Date == "" && metrics.Date != "" {
 			m.Date = metrics.Date

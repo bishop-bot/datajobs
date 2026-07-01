@@ -15,7 +15,12 @@ CREATE TABLE IF NOT EXISTS stock_metrics_ttm (
     dividend_payout DOUBLE,
     dividend_yield DOUBLE,
     enterprise_value DOUBLE,
+    ev_to_revenue DOUBLE,
+    ev_to_ebitda DOUBLE,
     free_cash_flow DOUBLE,
+    gross_profit_margin DOUBLE,
+    net_profit_margin DOUBLE,
+    operating_profit_margin DOUBLE,
     price DOUBLE,
     price_to_book DOUBLE,
     price_to_cash_flow DOUBLE,
@@ -25,6 +30,10 @@ CREATE TABLE IF NOT EXISTS stock_metrics_ttm (
     quick DOUBLE,
     return_on_assets DOUBLE,
     return_on_equity DOUBLE,
+    return_on_capital_employed DOUBLE,
+    roic DOUBLE,
+    created_at TEXT,
+    updated_at TEXT,
     PRIMARY KEY (symbol)
 );
 
